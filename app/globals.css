@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-stone-950: #14110d;
+  --color-stone-900: #1c1814;
+  --color-stone-800: #2a241d;
+  --color-stone-300: #ddd5c8;
+  --color-stone-400: #a99f8f;
+
+  --color-amber-600: #c8963e;
+  --color-amber-500: #dcae55;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-stone-950);
+  color: var(--color-stone-300);
+}

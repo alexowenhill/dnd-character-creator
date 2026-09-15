@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Netlify's Next.js runtime handles the App Router, including the server-side
+# route handlers this app uses to talk to the D&D Yonder API.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
