@@ -29,10 +29,17 @@ export type YonderResult = {
 /** Raw call against the upstream API. `token` is optional for login/register. */
 export async function yonderFetch(
   path: string,
-  init: { method?: string; token?: string; json?: unknown; form?: Record<string, string> } = {},
+  init: {
+    method?: string
+    token?: string
+    json?: unknown
+    form?: Record<string, string>
+    /** Overrides for Accept and friends, so header theories can be tested. */
+    extraHeaders?: Record<string, string>
+  } = {},
 ): Promise<YonderResult> {
-  const { method = 'GET', token, json, form } = init
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const { method = 'GET', token, json, form, extraHeaders } = init
+  const headers: Record<string, string> = { Accept: 'application/json', ...extraHeaders }
   if (token) headers.Authorization = `Bearer ${token}`
 
   let body: string | undefined

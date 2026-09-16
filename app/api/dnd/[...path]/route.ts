@@ -56,7 +56,20 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     }
   }
 
-  const result = await yonderFetch(upstreamPath, { method: req.method, token, json, form })
+  // Let the caller override the headers that a fussy endpoint might branch on.
+  const extraHeaders: Record<string, string> = {}
+  for (const name of ['accept', 'x-requested-with', 'content-type']) {
+    const value = req.headers.get(name)
+    if (value && name !== 'content-type') extraHeaders[name] = value
+  }
+
+  const result = await yonderFetch(upstreamPath, {
+    method: req.method,
+    token,
+    json,
+    form,
+    extraHeaders,
+  })
 
   // Only reachable when the redirect could not be re-sent — a cross-origin
   // target, or a second redirect after the one hop yonderFetch allows.

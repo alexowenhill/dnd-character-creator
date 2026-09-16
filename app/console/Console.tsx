@@ -269,13 +269,14 @@ export function Console({ signedIn }: { signedIn: boolean }) {
     reqPath: string,
     reqBody?: unknown,
     reqEncoding: Encoding = 'json',
+    reqHeaders?: Record<string, string>,
   ): Promise<Entry> => {
     const started = performance.now()
     let entry: Entry
 
     try {
       let payload: string | undefined
-      const headers: Record<string, string> = {}
+      const headers: Record<string, string> = { ...reqHeaders }
       if (reqBody !== undefined) {
         if (reqEncoding === 'form') {
           headers['Content-Type'] = 'application/x-www-form-urlencoded'
@@ -293,7 +294,7 @@ export function Console({ signedIn }: { signedIn: boolean }) {
 
       const res = await fetch(`/api/dnd/${reqPath}`, {
         method: reqMethod,
-        headers: reqBody !== undefined ? headers : undefined,
+        headers: Object.keys(headers).length ? headers : undefined,
         body: payload,
       })
       const text = await res.text()
@@ -402,6 +403,7 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         method?: Method
         /** Probes a different route, so its reply says nothing about the body. */
         otherRoute?: boolean
+        headers?: Record<string, string>
       }[] = [
         { label: 'name + level, JSON', path: 'characters', enc: 'json', body: { name, level: 1 } },
         { label: 'name + level, form', path: 'characters', enc: 'form', body: { name, level: 1 } },
@@ -415,6 +417,21 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         // Some routes read from the query string rather than the body.
         { label: 'query string, no body', path: `characters?name=${encodeURIComponent(name)}&level=1`, enc: 'json' },
         // Alternative spellings of the route, in case the docs name it wrongly.
+        // Some handlers branch on these rather than on the body.
+        {
+          label: 'Accept: */*',
+          path: 'characters',
+          enc: 'json',
+          body: { name, level: 1 },
+          headers: { Accept: '*/*' },
+        },
+        {
+          label: 'X-Requested-With: XMLHttpRequest',
+          path: 'characters',
+          enc: 'json',
+          body: { name, level: 1 },
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        },
         { label: 'singular /api/character', path: 'character', enc: 'json', body: { name, level: 1 }, otherRoute: true },
         { label: 'trailing slash (re-sent)', path: 'characters/', enc: 'json', body: { name, level: 1 } },
       ]
@@ -422,7 +439,13 @@ export function Console({ signedIn }: { signedIn: boolean }) {
       let step = 3
       const replies: string[] = []
       for (const attempt of attempts) {
-        const res = await call(attempt.method ?? 'POST', attempt.path, attempt.body, attempt.enc)
+        const res = await call(
+          attempt.method ?? 'POST',
+          attempt.path,
+          attempt.body,
+          attempt.enc,
+          attempt.headers,
+        )
         const isList = Array.isArray(res.response)
         // A redirect is reported separately as a 502 by the proxy, so a 200
         // carrying a list means the route answered but did not create anything.
@@ -450,6 +473,16 @@ export function Console({ signedIn }: { signedIn: boolean }) {
           `\nThe rejections differ, so the route IS reading the body — compare the lines above to see which field it is unhappy about.`,
         )
       }
+
+      // Control: a POST that is known to work, proving the token, the method,
+      // the JSON body and the proxy are all fine and the create route is not.
+      const dice = await call('POST', 'game/dice', { dice: { d6: 4 } }, 'json')
+      lines.push(
+        dice.status >= 200 && dice.status < 300
+          ? `${step}. CONTROL — POST /api/game/dice → ${dice.status}, worked. So POSTing JSON with this token is fine; it is the create route specifically that refuses.`
+          : `${step}. CONTROL — POST /api/game/dice → ${dice.status}. Another POST fails too, so the problem is broader than the create route.`,
+      )
+      step += 1
 
       const after = await call('GET', 'characters')
       const afterCount = count(after)

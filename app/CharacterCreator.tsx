@@ -505,8 +505,14 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
       if (createError) {
         // Every spelling was refused — show what was sent and what came back.
         setErrorDetail({ attempts: tried })
+        // When every attempt is refused identically the route is rejecting
+        // before it reads the body, so say that plainly rather than repeating
+        // an error the player can do nothing about.
+        const allSame = tried.length > 1 && new Set(tried.map((line) => line.split(': ').pop())).size === 1
         throw new Error(
-          `The API refused to create the character. Each way of sending it was tried; the replies are below. Running the diagnosis on the API console page will show the full exchange.`,
+          allSame
+            ? `D&D Yonder is refusing to create characters at the moment — every way of sending it gets the same rejection, including an empty one, so this is a problem at their end rather than with what you typed. Everything else here works; it is only saving a new character that does not. The API console page has a diagnosis that produces a report you can send to the API's author.`
+            : `The API refused to create the character. Each way of sending it was tried; the replies are below. Running the diagnosis on the API console page will show the full exchange.`,
         )
       }
 
