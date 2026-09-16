@@ -450,7 +450,21 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
         .catch(() => [] as ReturnType<typeof listCharacters>)
       const knownGuids = new Set(before.map((entry) => entry.guid))
 
-      const data = await api('characters/', { method: 'POST', body: { name: charName, level } })
+      // The docs write the create route with a trailing slash, but a redirect
+      // on that URL would drop the POST body, so try the bare path first and
+      // fall back. Whichever answers, the guid is recovered the same way.
+      let data: unknown = null
+      let createError: Error | null = null
+      for (const candidate of ['characters', 'characters/']) {
+        try {
+          data = await api(candidate, { method: 'POST', body: { name: charName, level } })
+          createError = null
+          break
+        } catch (err) {
+          createError = err as Error
+        }
+      }
+      if (createError) throw createError
 
       let created = extractGuid(data)
 

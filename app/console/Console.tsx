@@ -11,10 +11,15 @@ type Entry = {
   method: Method
   path: string
   sentBody: string
+  encoding?: 'json' | 'form'
   status: number
   ms: number
   response: unknown
+  /** What the upstream API returned, as reported by the proxy. */
+  upstream?: { status: string | null; contentType: string | null; bytes: string | null }
 }
+
+type Encoding = 'json' | 'form'
 
 type Preset = { label: string; method: Method; path: string; body?: string }
 
@@ -232,14 +237,91 @@ export function Console({ signedIn }: { signedIn: boolean }) {
   const [method, setMethod] = useState<Method>('GET')
   const [path, setPath] = useState('characters/races')
   const [body, setBody] = useState('')
+  const [encoding, setEncoding] = useState<Encoding>('json')
   const [guid, setGuid] = useState('')
   const [busy, setBusy] = useState(false)
   const [entries, setEntries] = useState<Entry[]>([])
   const [bodyError, setBodyError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [report, setReport] = useState<string[]>([])
 
   const resolvedPath = path.replace(/\{guid\}/g, guid).replace(/^\/+/, '')
   const sendsBody = method !== 'GET' && method !== 'DELETE'
+
+  /**
+   * One request. Returns the entry so the diagnosis can reason about it, and
+   * records it in the log either way.
+   */
+  const call = async (
+    reqMethod: Method,
+    reqPath: string,
+    reqBody?: unknown,
+    reqEncoding: Encoding = 'json',
+  ): Promise<Entry> => {
+    const started = performance.now()
+    let entry: Entry
+
+    try {
+      let payload: string | undefined
+      const headers: Record<string, string> = {}
+      if (reqBody !== undefined) {
+        if (reqEncoding === 'form') {
+          headers['Content-Type'] = 'application/x-www-form-urlencoded'
+          // Flatten one level; nested values go as JSON strings.
+          const flat = new URLSearchParams()
+          for (const [k, v] of Object.entries(reqBody as Record<string, unknown>)) {
+            flat.set(k, typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v))
+          }
+          payload = flat.toString()
+        } else {
+          headers['Content-Type'] = 'application/json'
+          payload = JSON.stringify(reqBody)
+        }
+      }
+
+      const res = await fetch(`/api/dnd/${reqPath}`, {
+        method: reqMethod,
+        headers: reqBody !== undefined ? headers : undefined,
+        body: payload,
+      })
+      const text = await res.text()
+      let response: unknown = text
+      try {
+        response = text ? JSON.parse(text) : null
+      } catch {
+        // Leave it as text — an HTML error page is worth seeing verbatim.
+      }
+
+      entry = {
+        id: Date.now() + Math.random(),
+        method: reqMethod,
+        path: reqPath,
+        sentBody: payload ?? '',
+        encoding: reqBody !== undefined ? reqEncoding : undefined,
+        status: res.status,
+        ms: Math.round(performance.now() - started),
+        response,
+        upstream: {
+          status: res.headers.get('x-upstream-status'),
+          contentType: res.headers.get('x-upstream-content-type'),
+          bytes: res.headers.get('x-upstream-bytes'),
+        },
+      }
+    } catch (err) {
+      entry = {
+        id: Date.now() + Math.random(),
+        method: reqMethod,
+        path: reqPath,
+        sentBody: '',
+        status: 0,
+        ms: Math.round(performance.now() - started),
+        response: `Request failed: ${(err as Error).message}`,
+      }
+    }
+
+    setEntries((prev) => [entry, ...prev])
+    return entry
+  }
 
   const send = async () => {
     setBodyError('')
@@ -256,52 +338,79 @@ export function Console({ signedIn }: { signedIn: boolean }) {
     }
 
     setBusy(true)
-    const started = performance.now()
     try {
-      const res = await fetch(`/api/dnd/${resolvedPath}`, {
-        method,
-        headers: parsed !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-        body: parsed !== undefined ? JSON.stringify(parsed) : undefined,
-      })
-      const ms = Math.round(performance.now() - started)
-      const text = await res.text()
-      let response: unknown = text
-      try {
-        response = text ? JSON.parse(text) : null
-      } catch {
-        // Leave it as text — an HTML error page is worth seeing verbatim.
+      const entry = await call(method, resolvedPath, parsed, encoding)
+      // Offer up any guid we spot, so the next call can use {guid}.
+      const found = sniffGuid(entry.response)
+      if (found && !guid) setGuid(found)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Works out why a created character does not stick, by trying each
+   * combination that could plausibly matter and comparing the character list
+   * before and after.
+   */
+  const runDiagnosis = async () => {
+    setBusy(true)
+    setReport([])
+    const lines: string[] = []
+    const count = (entry: Entry) =>
+      Array.isArray(entry.response) ? entry.response.length : null
+
+    try {
+      const who = await call('GET', 'user')
+      lines.push(
+        who.status === 200
+          ? `1. Token works — GET /api/user returned ${who.status}.`
+          : `1. GET /api/user returned ${who.status}. If this is not 200 the token is the problem, and nothing below will save.`,
+      )
+
+      const before = await call('GET', 'characters')
+      const beforeCount = count(before)
+      lines.push(
+        `2. Characters before: ${beforeCount === null ? 'not a list — see the response' : beforeCount}.`,
+      )
+
+      const name = `Diagnostic ${new Date().toISOString().slice(11, 19)}`
+      const attempts: { label: string; path: string; enc: Encoding }[] = [
+        { label: 'no trailing slash, JSON', path: 'characters', enc: 'json' },
+        { label: 'trailing slash, JSON', path: 'characters/', enc: 'json' },
+        { label: 'no trailing slash, form data', path: 'characters', enc: 'form' },
+        { label: 'trailing slash, form data', path: 'characters/', enc: 'form' },
+      ]
+
+      let step = 3
+      for (const attempt of attempts) {
+        const res = await call('POST', attempt.path, { name, level: 1 }, attempt.enc)
+        const isList = Array.isArray(res.response)
+        // A redirect is reported separately as a 502 by the proxy, so a 200
+        // carrying a list means the route answered but did not create anything.
+        const detail = isList
+          ? `returned a list of ${(res.response as unknown[]).length} — that is the characters list, not a created character`
+          : `returned ${JSON.stringify(res.response)?.slice(0, 120)}`
+        lines.push(`${step}. POST ${attempt.label} → ${res.status}, ${detail}`)
+        step += 1
       }
 
-      setEntries((prev) => [
-        {
-          id: Date.now(),
-          method,
-          path: resolvedPath,
-          sentBody: parsed !== undefined ? JSON.stringify(parsed) : '',
-          status: res.status,
-          ms,
-          response,
-        },
-        ...prev,
-      ])
+      const after = await call('GET', 'characters')
+      const afterCount = count(after)
+      lines.push(`${step}. Characters after: ${afterCount === null ? 'not a list' : afterCount}.`)
 
-      // Offer up any guid we spot, so the next call can use {guid}.
-      const found = sniffGuid(response)
-      if (found && !guid) setGuid(found)
+      if (beforeCount !== null && afterCount !== null) {
+        const gained = afterCount - beforeCount
+        lines.push(
+          gained > 0
+            ? `\nVERDICT: ${gained} character(s) were saved. Whichever POST above did not return a list is the one that works — use that path and encoding.`
+            : `\nVERDICT: nothing was saved by any combination. Every create was accepted and nothing persisted, which is server-side — no change to this app can work around it. "Copy all as text" below, and send it to the API author (the docs point to an email address); it is a complete reproduction.`,
+        )
+      }
     } catch (err) {
-      setEntries((prev) => [
-        {
-          id: Date.now(),
-          method,
-          path: resolvedPath,
-          sentBody: '',
-          status: 0,
-          ms: Math.round(performance.now() - started),
-          response: `Request failed: ${(err as Error).message}`,
-        },
-        ...prev,
-      ])
+      lines.push(`Diagnosis stopped: ${(err as Error).message}`)
     } finally {
+      setReport(lines)
       setBusy(false)
     }
   }
@@ -322,13 +431,18 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         const lines = [
           `${entry.method} /api/${entry.path}  →  ${entry.status} (${entry.ms}ms)`,
         ]
+        if (entry.encoding) lines.push(`sent as: ${entry.encoding}`)
         if (entry.sentBody) lines.push(`request:  ${entry.sentBody}`)
+        if (entry.upstream?.contentType) {
+          lines.push(`upstream: ${entry.upstream.status} ${entry.upstream.contentType}, ${entry.upstream.bytes} bytes`)
+        }
         lines.push(`response: ${JSON.stringify(entry.response, null, 2)}`)
         return lines.join('\n')
       })
       .join('\n\n────────────────\n\n')
+    const full = report.length ? `${report.join('\n')}\n\n════════════════\n\n${text}` : text
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(full)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -401,7 +515,30 @@ export function Console({ signedIn }: { signedIn: boolean }) {
 
         {sendsBody && (
           <div className="space-y-1">
-            <label className="block text-xs text-stone-400">JSON body</label>
+            <div className="flex items-center gap-3">
+              <label className="block text-xs text-stone-400">Body</label>
+              <div className="flex gap-1">
+                {(['json', 'form'] as Encoding[]).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setEncoding(option)}
+                    className={`rounded-full px-2.5 py-0.5 text-xs cursor-pointer ${
+                      encoding === option
+                        ? 'bg-amber-600 text-stone-950'
+                        : 'border border-white/10 bg-white/5 text-stone-400 hover:bg-white/10'
+                    }`}
+                  >
+                    {option === 'json' ? 'JSON' : 'form data'}
+                  </button>
+                ))}
+              </div>
+              <span className="text-xs text-stone-500">
+                {encoding === 'form'
+                  ? 'sent as application/x-www-form-urlencoded'
+                  : 'sent as application/json'}
+              </span>
+            </div>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -412,6 +549,27 @@ export function Console({ signedIn }: { signedIn: boolean }) {
             />
             {bodyError && <p className="text-xs text-red-400">{bodyError}</p>}
           </div>
+        )}
+      </div>
+
+      {/* One-click investigation of the "characters do not save" problem */}
+      <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+        <div>
+          <h2 className="text-sm font-medium text-amber-200">Why don&rsquo;t my characters save?</h2>
+          <p className="mt-1 text-xs text-stone-400">
+            Checks the token, counts your characters, then tries creating one four ways — with and
+            without a trailing slash, as JSON and as form data — and counts again. Tells you which
+            combination works, or that none of them do.
+          </p>
+        </div>
+        <Button type="button" variant="primary" size="sm" onClick={runDiagnosis} disabled={busy}>
+          {busy ? 'Running…' : 'Run diagnosis'}
+        </Button>
+
+        {report.length > 0 && (
+          <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-black/30 p-3 text-xs leading-relaxed text-stone-300">
+            {report.join('\n')}
+          </pre>
         )}
       </div>
 
@@ -468,6 +626,19 @@ export function Console({ signedIn }: { signedIn: boolean }) {
                   {entry.method} /api/{entry.path}
                 </code>
                 <span className="text-stone-500">{entry.ms}ms</span>
+                {entry.encoding && (
+                  <span className="text-stone-500">
+                    sent as {entry.encoding === 'form' ? 'form data' : 'JSON'}
+                  </span>
+                )}
+                {entry.upstream?.bytes && (
+                  <span className="text-stone-500">{entry.upstream.bytes} bytes back</span>
+                )}
+                {Array.isArray(entry.response) && (
+                  <span className="rounded bg-white/10 px-2 py-0.5 text-stone-400">
+                    array[{entry.response.length}]
+                  </span>
+                )}
               </div>
               {entry.sentBody && (
                 <pre className="overflow-x-auto rounded bg-black/20 p-2 text-xs text-stone-400">

@@ -38,18 +38,39 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const upstreamPath = `/api/${rest}${search}`
 
   let json: unknown = undefined
+  let form: Record<string, string> | undefined = undefined
   if (req.method !== 'GET' && req.method !== 'DELETE') {
     const text = await req.text()
     if (text) {
-      try {
-        json = JSON.parse(text)
-      } catch {
-        return NextResponse.json({ error: 'Request body was not valid JSON' }, { status: 400 })
+      // Forward the encoding the caller chose. The console can send form data,
+      // since login and register take form data and the rest may too.
+      if ((req.headers.get('content-type') ?? '').includes('x-www-form-urlencoded')) {
+        form = Object.fromEntries(new URLSearchParams(text))
+      } else {
+        try {
+          json = JSON.parse(text)
+        } catch {
+          return NextResponse.json({ error: 'Request body was not valid JSON' }, { status: 400 })
+        }
       }
     }
   }
 
-  const result = await yonderFetch(upstreamPath, { method: req.method, token, json })
+  const result = await yonderFetch(upstreamPath, { method: req.method, token, json, form })
+
+  // A 3xx body is empty, so say what happened instead of returning nothing.
+  // This is the failure mode where a POST to a redirecting URL would otherwise
+  // be silently retried as a GET and look like a successful read.
+  if (result.status >= 300 && result.status < 400) {
+    return NextResponse.json(
+      {
+        error: `Upstream redirected (${result.status}) instead of handling ${req.method} /api/${rest}`,
+        redirectedTo: result.redirectedTo ?? null,
+        hint: 'A POST answered with a redirect loses its body. Try the same path with or without a trailing slash.',
+      },
+      { status: 502, headers: { 'x-upstream-status': String(result.status) } },
+    )
+  }
 
   if (result.status === 401) {
     const res = NextResponse.json({ error: 'D&D Yonder session expired' }, { status: 401 })
@@ -57,7 +78,16 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     return res
   }
 
-  return NextResponse.json(result.body, { status: result.status })
+  // Diagnostics ride along in headers so the console can show what really came
+  // back without changing the body the app sees.
+  return NextResponse.json(result.body, {
+    status: result.status,
+    headers: {
+      'x-upstream-status': String(result.status),
+      'x-upstream-content-type': result.contentType ?? 'none',
+      'x-upstream-bytes': String(result.text.length),
+    },
+  })
 }
 
 export const GET = proxy

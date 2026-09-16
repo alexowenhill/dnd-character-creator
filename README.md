@@ -77,6 +77,26 @@ character) probe for the common envelope and field names rather than assuming
 one. Anything they cannot find is left out of the sheet instead of crashing, and
 the raw JSON stays visible underneath.
 
+### "Why don't my characters save?"
+
+The console has a one-click diagnosis for this. It checks the token with
+`GET /api/user`, counts your characters, tries creating one four ways — with and
+without a trailing slash, as JSON and as form data — then counts again, and says
+which combination worked or that none did.
+
+Two things it is built to catch:
+
+- **A redirect on the create route.** Per the fetch spec a 301/302 answering a
+  POST is retried as a GET with the body dropped, so `POST /api/characters/`
+  redirecting to `/api/characters` would silently become a read of the
+  characters list — a create that appears to succeed and returns an empty array.
+  `yonderFetch` therefore uses `redirect: 'manual'` and the proxy reports any
+  3xx rather than letting it turn into a phantom read.
+- **A create that is accepted but never persisted.** If every combination
+  returns 2xx and the character count does not move, the problem is server-side
+  and no change here can fix it. The transcript is a complete reproduction to
+  send to the API author.
+
 ### The API console
 
 `/console` (linked at the foot of the main page) sends arbitrary requests

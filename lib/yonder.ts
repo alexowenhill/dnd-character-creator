@@ -17,6 +17,11 @@ export type YonderResult = {
   ok: boolean
   status: number
   body: unknown
+  /** Raw response text, before any JSON parsing — `[]` and `""` differ. */
+  text: string
+  /** Set when upstream answered with a 3xx instead of doing the work. */
+  redirectedTo?: string
+  contentType?: string
 }
 
 /** Raw call against the upstream API. `token` is optional for login/register. */
@@ -42,6 +47,11 @@ export async function yonderFetch(
     headers,
     body,
     cache: 'no-store',
+    // Never follow redirects. Per the fetch spec a 301/302 answering a POST is
+    // retried as a GET with the body dropped, so a redirect on the create route
+    // would silently turn into a read of the characters list and look like a
+    // create that returned an empty list. Surface the 3xx instead.
+    redirect: 'manual',
   })
 
   const text = await res.text()
@@ -53,7 +63,15 @@ export async function yonderFetch(
     // so the caller can surface something useful.
   }
 
-  return { ok: res.ok, status: res.status, body: parsed }
+  const location = res.headers.get('location')
+  return {
+    ok: res.ok,
+    status: res.status,
+    body: parsed,
+    text,
+    redirectedTo: location ?? undefined,
+    contentType: res.headers.get('content-type') ?? undefined,
+  }
 }
 
 export * from './shape'
