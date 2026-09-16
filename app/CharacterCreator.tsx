@@ -18,11 +18,34 @@ import {
  * Transport
  * ------------------------------------------------------------------ */
 
-async function api(path: string, init?: { method?: string; body?: unknown }): Promise<unknown> {
+/** Encode a flat object as form data; nested values go as JSON strings. */
+function toForm(body: unknown): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+    params.set(key, typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value))
+  }
+  return params.toString()
+}
+
+async function api(
+  path: string,
+  init?: { method?: string; body?: unknown; encoding?: 'json' | 'form' },
+): Promise<unknown> {
+  const encoding = init?.encoding ?? 'json'
+  const hasBody = init?.body !== undefined
   const res = await fetch(`/api/dnd/${path}`, {
     method: init?.method ?? 'GET',
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
-    body: init?.body ? JSON.stringify(init.body) : undefined,
+    headers: hasBody
+      ? {
+          'Content-Type':
+            encoding === 'form' ? 'application/x-www-form-urlencoded' : 'application/json',
+        }
+      : undefined,
+    body: hasBody
+      ? encoding === 'form'
+        ? toForm(init.body)
+        : JSON.stringify(init.body)
+      : undefined,
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) {
@@ -450,21 +473,42 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
         .catch(() => [] as ReturnType<typeof listCharacters>)
       const knownGuids = new Set(before.map((entry) => entry.guid))
 
-      // The docs write the create route with a trailing slash, but a redirect
-      // on that URL would drop the POST body, so try the bare path first and
-      // fall back. Whichever answers, the guid is recovered the same way.
+      // The create route is fussy about how the body arrives: it answers JSON
+      // with "Bad Request", and login and register both take form data, so try
+      // form encoding as well before giving up. The bare path goes first
+      // because the API 301s the documented trailing-slash spelling.
       let data: unknown = null
       let createError: Error | null = null
-      for (const candidate of ['characters', 'characters/']) {
+      // Form encoding first: the live API answers a JSON create with
+      // "Bad Request", and both login and register take form data.
+      const attempts: { path: string; encoding: 'json' | 'form' }[] = [
+        { path: 'characters', encoding: 'form' },
+        { path: 'characters', encoding: 'json' },
+        { path: 'characters/', encoding: 'form' },
+        { path: 'characters/', encoding: 'json' },
+      ]
+      const tried: string[] = []
+      for (const attempt of attempts) {
         try {
-          data = await api(candidate, { method: 'POST', body: { name: charName, level } })
+          data = await api(attempt.path, {
+            method: 'POST',
+            body: { name: charName, level },
+            encoding: attempt.encoding,
+          })
           createError = null
           break
         } catch (err) {
           createError = err as Error
+          tried.push(`POST /api/${attempt.path} as ${attempt.encoding}: ${(err as Error).message}`)
         }
       }
-      if (createError) throw createError
+      if (createError) {
+        // Every spelling was refused — show what was sent and what came back.
+        setErrorDetail({ attempts: tried })
+        throw new Error(
+          `The API refused to create the character. Each way of sending it was tried; the replies are below. Running the diagnosis on the API console page will show the full exchange.`,
+        )
+      }
 
       let created = extractGuid(data)
 

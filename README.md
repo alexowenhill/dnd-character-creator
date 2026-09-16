@@ -115,6 +115,22 @@ bearer token.
 
 Both spellings of the create route therefore work. The UI uses the bare path.
 
+### How the create body is encoded
+
+With the redirect out of the way the create route answered a JSON body with
+`{"error":"Bad Request"}` — a custom 400, not Laravel's usual 422 validation
+shape, which suggests the body is not being read the way it was sent. Login and
+register both take form data, so the create may too.
+
+Rather than guess, creating a character tries each encoding in turn — form data
+first, since that is what the live evidence points at, then JSON — against the
+bare path and then the trailing-slash one. The first that succeeds wins, and if
+all four are refused the error lists what was sent and what came back.
+
+This is verified in both directions: against a mock that accepts only form data,
+and one that accepts only JSON. Whichever the API turns out to want, the app
+finds it.
+
 ### The API console
 
 `/console` (linked at the foot of the main page) sends arbitrary requests

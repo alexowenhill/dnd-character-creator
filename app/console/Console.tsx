@@ -388,22 +388,37 @@ export function Console({ signedIn }: { signedIn: boolean }) {
       )
 
       const name = `Diagnostic ${new Date().toISOString().slice(11, 19)}`
-      const attempts: { label: string; path: string; enc: Encoding }[] = [
-        { label: 'no trailing slash, JSON', path: 'characters', enc: 'json' },
-        { label: 'trailing slash, JSON', path: 'characters/', enc: 'json' },
-        { label: 'no trailing slash, form data', path: 'characters', enc: 'form' },
-        { label: 'trailing slash, form data', path: 'characters/', enc: 'form' },
+      // The path question is settled — the API 301s the trailing-slash form and
+      // the proxy re-sends it — so vary the body, which is what the create is
+      // now rejecting.
+      const attempts: { label: string; path: string; enc: Encoding; body: unknown }[] = [
+        { label: 'name + level, JSON', path: 'characters', enc: 'json', body: { name, level: 1 } },
+        { label: 'name + level, form data', path: 'characters', enc: 'form', body: { name, level: 1 } },
+        { label: 'name only, JSON', path: 'characters', enc: 'json', body: { name } },
+        { label: 'name only, form data', path: 'characters', enc: 'form', body: { name } },
+        {
+          label: 'level as a string, JSON',
+          path: 'characters',
+          enc: 'json',
+          body: { name, level: '1' },
+        },
+        {
+          label: 'trailing slash (re-sent), JSON',
+          path: 'characters/',
+          enc: 'json',
+          body: { name, level: 1 },
+        },
       ]
 
       let step = 3
       for (const attempt of attempts) {
-        const res = await call('POST', attempt.path, { name, level: 1 }, attempt.enc)
+        const res = await call('POST', attempt.path, attempt.body, attempt.enc)
         const isList = Array.isArray(res.response)
         // A redirect is reported separately as a 502 by the proxy, so a 200
         // carrying a list means the route answered but did not create anything.
         const detail = isList
           ? `returned a list of ${(res.response as unknown[]).length} — that is the characters list, not a created character`
-          : `returned ${JSON.stringify(res.response)?.slice(0, 120)}`
+          : `returned ${JSON.stringify(res.response)?.slice(0, 200)}`
         lines.push(`${step}. POST ${attempt.label} → ${res.status}, ${detail}`)
         step += 1
       }
@@ -416,8 +431,8 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         const gained = afterCount - beforeCount
         lines.push(
           gained > 0
-            ? `\nVERDICT: ${gained} character(s) were saved. Whichever POST above did not return a list is the one that works — use that path and encoding.`
-            : `\nVERDICT: nothing was saved by any combination. Every create was accepted and nothing persisted, which is server-side — no change to this app can work around it. "Copy all as text" below, and send it to the API author (the docs point to an email address); it is a complete reproduction.`,
+            ? `\nVERDICT: ${gained} character(s) were saved. The attempts above that returned a character are the ones that work — note the body and encoding of the first such line; that is what the app should send.`
+            : `\nVERDICT: nothing was saved. If the lines above are 4xx, the API is rejecting the body and the error text is the clue. If they are 2xx and the count still did not move, the create is accepted and not persisted, which is server-side. Either way "Copy all as text" below is a complete reproduction to send to the API author.`,
         )
       }
     } catch (err) {
