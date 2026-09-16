@@ -77,6 +77,23 @@ character) probe for the common envelope and field names rather than assuming
 one. Anything they cannot find is left out of the sheet instead of crashing, and
 the raw JSON stays visible underneath.
 
+### The API console
+
+`/console` (linked at the foot of the main page) sends arbitrary requests
+through the same authenticated proxy the app uses and shows the raw response —
+status, timing and body — so you can see what an endpoint really returns without
+touching the wizard.
+
+- Presets for every documented endpoint, plus guesses for the undocumented ones
+  (which path serves languages, where the current user lives).
+- `{guid}` in a path is substituted from the captured-guid box, which fills in
+  automatically from any response containing a guid, so create-then-PATCH is two
+  clicks.
+- "Copy all as text" puts the whole session on the clipboard, which is the
+  quickest way to hand over what happened.
+
+Sign in on the main page first — the console borrows the same token.
+
 ### Checking them against the live API
 
 **The response readers have not been run against the real service.** This was

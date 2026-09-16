@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import { DND_TOKEN_COOKIE } from '@/lib/yonder'
 import { CharacterCreator } from './CharacterCreator'
 
@@ -16,6 +17,12 @@ export default async function HomePage() {
       </header>
 
       <CharacterCreator signedIn={signedIn} />
+
+      <footer className="border-t border-white/10 pt-4">
+        <Link href="/console" className="text-xs text-stone-500 hover:text-stone-300">
+          API console — send raw requests and see what the API returns
+        </Link>
+      </footer>
     </main>
   )
 }
