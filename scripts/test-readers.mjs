@@ -12,7 +12,7 @@
  *   npm test
  */
 import { readSheet, modifierFor } from '../lib/sheet.ts'
-import { toOptions, extractGuid, extractRoll, bestThreeOfFour } from '../lib/shape.ts'
+import { toOptions, extractGuid, extractRoll, bestThreeOfFour, extractToken, describeUpstream } from '../lib/shape.ts'
 
 let failed = 0
 const check = (label, cond, extra = '') => {
@@ -99,6 +99,31 @@ check('extractGuid direct', extractGuid({ guid: 'abc' }) === 'abc')
 check('extractGuid nested', extractGuid({ character: { guid: 'xyz' } }) === 'xyz')
 check('extractRoll', (() => { const r = extractRoll({ guid: 'g1', rolls: { d6: [4, 5, 2, 6] } }); return r.guid === 'g1' && r.values.length === 4 })())
 check('bestThreeOfFour drops lowest', bestThreeOfFour([4, 5, 2, 6]) === 15, String(bestThreeOfFour([4, 5, 2, 6])))
+
+// --- extractToken: the shapes Laravel auth endpoints actually use -----
+check('token: top level', extractToken({ token: 'abc.def.ghi' }) === 'abc.def.ghi')
+check('token: with user alongside', extractToken({ user: { id: 1 }, token: 't1' }) === 't1')
+check('token: access_token (Passport)', extractToken({ access_token: 't2', token_type: 'Bearer' }) === 't2')
+check('token: plainTextToken (Sanctum)', extractToken({ plainTextToken: '1|abcdef' }) === '1|abcdef')
+check('token: nested in data', extractToken({ data: { token: 't3' } }) === 't3')
+check('token: nested in user', extractToken({ user: { name: 'x', api_token: 't4' } }) === 't4')
+check('token: nested object under token', extractToken({ token: { plainTextToken: 't5' } }) === 't5')
+check('token: bare string body', extractToken('1|rawtoken') === '1|rawtoken')
+check('token: shallow beats deep', extractToken({ token: 'shallow', data: { token: 'deep' } }) === 'shallow')
+check('token: absent -> null', extractToken({ message: 'Invalid credentials' }) === null)
+check('token: HTML body -> null', extractToken('<!DOCTYPE html><html>') === null)
+check('token: null safe', extractToken(null) === null)
+check('token: no infinite loop on cycle', (() => {
+  const a = { nested: {} }; a.nested.back = a
+  return extractToken(a) === null
+})())
+
+// --- describeUpstream ------------------------------------------------
+check('describe: message field', describeUpstream({ message: 'Invalid credentials' }) === 'Invalid credentials')
+check('describe: error field', describeUpstream({ error: 'nope' }) === 'nope')
+check('describe: html', describeUpstream('<!DOCTYPE html>') === 'an HTML page rather than JSON')
+check('describe: empty', describeUpstream(null) === 'empty response')
+check('describe: falls back to JSON', describeUpstream({ odd: 1 }) === '{"odd":1}', describeUpstream({ odd: 1 }))
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed')
 process.exitCode = failed ? 1 : 0

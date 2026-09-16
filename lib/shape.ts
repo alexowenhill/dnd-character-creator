@@ -94,6 +94,72 @@ export function toOptions(payload: unknown): Option[] {
   return unwrapList(payload).map(toOption).filter(Boolean) as Option[]
 }
 
+/**
+ * Find the auth token in a login/register response.
+ *
+ * Laravel apps hand this back under a variety of names — Sanctum's
+ * `createToken()` produces `plainTextToken`, Passport uses `access_token` — and
+ * it may sit at the top level or inside a `data`/`user` envelope. Searches
+ * breadth-first so a shallow match wins over a deeper one.
+ */
+const TOKEN_KEYS = [
+  'token', 'access_token', 'accessToken', 'plainTextToken', 'plain_text_token',
+  'auth_token', 'authToken', 'api_token', 'apiToken', 'bearer', 'jwt',
+]
+
+export function extractToken(payload: unknown): string | null {
+  // Some APIs return the bare token as the whole body.
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim()
+    return trimmed && !trimmed.startsWith('<') && !trimmed.includes(' ') ? trimmed : null
+  }
+
+  const queue: unknown[] = [payload]
+  let guard = 0
+
+  while (queue.length && guard++ < 200) {
+    const current = queue.shift()
+    if (!current || typeof current !== 'object') continue
+
+    const obj = current as Record<string, unknown>
+    for (const key of TOKEN_KEYS) {
+      const value = obj[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+      // e.g. { token: { plainTextToken: '…' } }
+      if (value && typeof value === 'object') queue.push(value)
+    }
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object') queue.push(value)
+    }
+  }
+
+  return null
+}
+
+/**
+ * A short, readable rendering of an upstream body, for error messages.
+ * Prefers a message field, since a 200 carrying "Invalid credentials" is the
+ * likeliest reason a token is missing.
+ */
+export function describeUpstream(payload: unknown): string {
+  if (payload === null || payload === undefined) return 'empty response'
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim()
+    if (trimmed.startsWith('<')) return 'an HTML page rather than JSON'
+    return trimmed.slice(0, 200)
+  }
+  if (typeof payload === 'object') {
+    const obj = payload as Record<string, unknown>
+    for (const key of ['message', 'error', 'errors', 'detail', 'description']) {
+      const value = obj[key]
+      if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 200)
+      if (value && typeof value === 'object') return JSON.stringify(value).slice(0, 200)
+    }
+    return JSON.stringify(payload).slice(0, 200)
+  }
+  return String(payload)
+}
+
 /** Find the character guid in a create-character response. */
 export function extractGuid(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null

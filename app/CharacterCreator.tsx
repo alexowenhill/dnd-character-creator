@@ -136,12 +136,14 @@ function SignIn({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [upstream, setUpstream] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
     setError('')
+    setUpstream(null)
     try {
       const res = await fetch('/api/dnd/auth', {
         method: 'POST',
@@ -149,8 +151,13 @@ function SignIn({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({ mode, name, email, password }),
       })
       if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error((data as { error?: string } | null)?.error ?? 'Could not sign in')
+        const data = (await res.json().catch(() => null)) as
+          | { error?: string; upstream?: unknown }
+          | null
+        // Keep the upstream body so a shape we did not anticipate is visible
+        // rather than hidden behind a generic message.
+        if (data?.upstream !== undefined) setUpstream(data.upstream)
+        throw new Error(data?.error ?? `Could not sign in (${res.status})`)
       }
       onDone()
     } catch (err) {
@@ -195,6 +202,16 @@ function SignIn({ onDone }: { onDone: () => void }) {
         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-stone-500 outline-none focus:border-amber-500"
       />
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {upstream !== null && (
+        <details className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+          <summary className="cursor-pointer text-xs text-stone-400">
+            What the API actually sent back
+          </summary>
+          <pre className="mt-2 overflow-x-auto text-xs text-stone-300">
+            {JSON.stringify(upstream, null, 2)}
+          </pre>
+        </details>
+      )}
       <Button type="submit" variant="primary" className="w-full" disabled={busy}>
         {busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Sign in'}
       </Button>

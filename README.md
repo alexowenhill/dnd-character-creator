@@ -115,6 +115,22 @@ or JSON encoding, and which path serves the language list (it tries
 Both of those prove the app's own wiring. Neither proves the guessed field
 names, which is what `npm run probe` is for.
 
+### If signing in fails
+
+The sign-in screen shows what the API actually replied, under "What the API
+actually sent back" — start there rather than guessing.
+
+`extractToken` in `lib/shape.ts` searches for the token under the names Laravel
+apps commonly use (`token`, `access_token`, Sanctum's `plainTextToken`,
+Passport's `access_token`), at the top level or inside a `data`/`user`
+envelope, so a merely unexpected nesting is handled. If the detail panel shows a
+token under some other name again, add it to `TOKEN_KEYS`.
+
+"Signed in, but no token came back" means the call returned 2xx with no token
+anywhere in it. Most often that is the API reporting a problem in a 200 — wrong
+password, or an account that does not exist yet — and the message after the
+colon is the API's own words.
+
 ### If a step comes up empty
 
 That means the response used field names the readers do not know.

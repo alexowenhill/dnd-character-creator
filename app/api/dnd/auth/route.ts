@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { yonderFetch, DND_TOKEN_COOKIE } from '@/lib/yonder'
+import { yonderFetch, DND_TOKEN_COOKIE, extractToken, describeUpstream } from '@/lib/yonder'
 
 /**
  * Logs in or registers against D&D Yonder and stores the returned JWT in an
@@ -25,22 +25,36 @@ export async function POST(req: NextRequest) {
   let result = await yonderFetch(path, { method: 'POST', form })
 
   // 401/422 are real credential or validation failures; anything else may just
-  // mean the endpoint wanted JSON.
-  if (!result.ok && result.status !== 401 && result.status !== 422) {
-    result = await yonderFetch(path, { method: 'POST', json: form })
+  // mean the endpoint wanted JSON. A 2xx with no token anywhere in it is the
+  // same signal — the encoding was accepted but the payload was not understood.
+  const needsRetry = result.status !== 401 && result.status !== 422 &&
+    (!result.ok || extractToken(result.body) === null)
+  if (needsRetry) {
+    const retry = await yonderFetch(path, { method: 'POST', json: form })
+    // Only keep the retry if it actually got us further.
+    if (retry.ok && extractToken(retry.body) !== null) result = retry
+    else if (!result.ok && retry.ok) result = retry
   }
 
   if (!result.ok) {
     return NextResponse.json(
-      { error: mode === 'register' ? 'Could not register' : 'Wrong email or password', upstream: result.body },
+      {
+        error: `${mode === 'register' ? 'Could not register' : 'Could not sign in'}: ${describeUpstream(result.body)}`,
+        upstream: result.body,
+      },
       { status: result.status || 502 },
     )
   }
 
-  const token = (result.body as { token?: unknown } | null)?.token
-  if (typeof token !== 'string') {
+  const token = extractToken(result.body)
+  if (token === null) {
+    // The call succeeded but carried no token. Most often that is the API
+    // reporting a problem in a 200, so lead with whatever it said.
     return NextResponse.json(
-      { error: 'No token in the upstream response', upstream: result.body },
+      {
+        error: `Signed in, but no token came back. The API said: ${describeUpstream(result.body)}`,
+        upstream: result.body,
+      },
       { status: 502 },
     )
   }
