@@ -97,6 +97,24 @@ check('toOptions strings', toOptions(['Alice', 'Bob'])[0].name === 'Alice')
 check('toOptions nested children', toOptions([{ id: 1, name: 'Fighter', paths: [{ id: 9, name: 'Champion' }] }])[0].children[0].name === 'Champion')
 check('extractGuid direct', extractGuid({ guid: 'abc' }) === 'abc')
 check('extractGuid nested', extractGuid({ character: { guid: 'xyz' } }) === 'xyz')
+check('extractGuid nested in data', extractGuid({ data: { guid: 'd1' } }) === 'd1')
+// The reported failure: a numeric id was rejected outright.
+check('extractGuid numeric id', extractGuid({ id: 42 }) === '42', String(extractGuid({ id: 42 })))
+check('extractGuid numeric nested', extractGuid({ character: { id: 7 } }) === '7')
+check('extractGuid uuid key', extractGuid({ uuid: 'u1' }) === 'u1')
+check('extractGuid characterId', extractGuid({ characterId: 9 }) === '9')
+check('extractGuid character_guid', extractGuid({ character_guid: 'cg' }) === 'cg')
+check('extractGuid deeply nested', extractGuid({ result: { data: { character: { guid: 'deep' } } } }) === 'deep')
+// A guid anywhere beats an id, even a shallower one belonging to something else.
+check('extractGuid prefers guid over id', extractGuid({ id: 1, guid: 'g' }) === 'g')
+check('extractGuid guid wins over owner id', extractGuid({ user: { id: 99 }, character: { guid: 'right' } }) === 'right',
+  String(extractGuid({ user: { id: 99 }, character: { guid: 'right' } })))
+check('extractGuid none -> null', extractGuid({ message: 'created' }) === null)
+check('extractGuid null safe', extractGuid(null) === null)
+check('extractGuid cycle safe', (() => { const a = { n: {} }; a.n.back = a; return extractGuid(a) === null })())
+check('extractRoll numeric guid', (() => {
+  const r = extractRoll({ guid: 1234, rolls: { d6: [1, 2, 3, 4] } }); return r?.guid === '1234'
+})())
 check('extractRoll', (() => { const r = extractRoll({ guid: 'g1', rolls: { d6: [4, 5, 2, 6] } }); return r.guid === 'g1' && r.values.length === 4 })())
 check('bestThreeOfFour drops lowest', bestThreeOfFour([4, 5, 2, 6]) === 15, String(bestThreeOfFour([4, 5, 2, 6])))
 

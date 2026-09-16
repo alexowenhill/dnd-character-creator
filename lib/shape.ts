@@ -113,27 +113,7 @@ export function extractToken(payload: unknown): string | null {
     const trimmed = payload.trim()
     return trimmed && !trimmed.startsWith('<') && !trimmed.includes(' ') ? trimmed : null
   }
-
-  const queue: unknown[] = [payload]
-  let guard = 0
-
-  while (queue.length && guard++ < 200) {
-    const current = queue.shift()
-    if (!current || typeof current !== 'object') continue
-
-    const obj = current as Record<string, unknown>
-    for (const key of TOKEN_KEYS) {
-      const value = obj[key]
-      if (typeof value === 'string' && value.trim()) return value.trim()
-      // e.g. { token: { plainTextToken: '…' } }
-      if (value && typeof value === 'object') queue.push(value)
-    }
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === 'object') queue.push(value)
-    }
-  }
-
-  return null
+  return findByKeys(payload, TOKEN_KEYS)
 }
 
 /**
@@ -160,28 +140,58 @@ export function describeUpstream(payload: unknown): string {
   return String(payload)
 }
 
-/** Find the character guid in a create-character response. */
-export function extractGuid(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') return null
-  const obj = payload as Record<string, unknown>
-  const direct = pick(obj, ['guid', 'uuid', 'id'])
-  if (typeof direct === 'string') return direct
-  for (const key of ['character', 'data']) {
-    const nested = obj[key]
-    if (nested && typeof nested === 'object') {
-      const found = extractGuid(nested)
-      if (found) return found
+/**
+ * Breadth-first search for the first non-empty string or number stored under
+ * any of `keys`. Shallow matches win, and a cycle cannot hang it.
+ */
+function findByKeys(payload: unknown, keys: string[]): string | null {
+  const queue: unknown[] = [payload]
+  const seen = new Set<unknown>()
+  let guard = 0
+
+  while (queue.length && guard++ < 200) {
+    const current = queue.shift()
+    if (!current || typeof current !== 'object' || seen.has(current)) continue
+    seen.add(current)
+
+    const obj = current as Record<string, unknown>
+    for (const key of keys) {
+      const value = obj[key]
+      if (typeof value === 'string' && value.trim()) return value.trim()
+      // An id may arrive as a number; the path it builds is a string either way.
+      if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    }
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object') queue.push(value)
     }
   }
+
   return null
+}
+
+const GUID_KEYS = [
+  'guid', 'uuid', 'characterGuid', 'character_guid', 'charGuid', 'char_guid',
+]
+// Only used if nothing guid-shaped turns up: an `id` is likelier to belong to
+// something else in the response (the owning user, say) than a real guid is.
+const GUID_FALLBACK_KEYS = [
+  'characterId', 'character_id', 'charId', 'char_id', 'id',
+]
+
+/**
+ * Find the character identifier in a create-character response — whatever the
+ * PATCH calls need to address the character afterwards.
+ */
+export function extractGuid(payload: unknown): string | null {
+  return findByKeys(payload, GUID_KEYS) ?? findByKeys(payload, GUID_FALLBACK_KEYS)
 }
 
 /** Find the roll guid + dice values in a dice response. */
 export function extractRoll(payload: unknown): { guid: string; values: number[] } | null {
   if (!payload || typeof payload !== 'object') return null
   const obj = payload as Record<string, unknown>
-  const guid = obj.guid ?? obj.id
-  if (typeof guid !== 'string') return null
+  const guid = findByKeys(obj, ['guid', 'uuid', 'rollGuid', 'roll_guid', 'id'])
+  if (guid === null) return null
 
   const rolls = obj.rolls
   const values: number[] = []

@@ -369,6 +369,8 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
   const [guid, setGuid] = useState<string | null>(null)
   const [step, setStep] = useState<Step>('name')
   const [error, setError] = useState('')
+  /** Raw payload behind the current error, when there is one worth showing. */
+  const [errorDetail, setErrorDetail] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 
   // Step 1 — name
@@ -400,15 +402,20 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
   // Steps are saved to the API one at a time, so going back is only about
   // re-showing a step: the character already exists and each PATCH is
   // independent, so re-saving a step simply overwrites that part.
-  const goBack = useCallback(() => {
+  const clearError = useCallback(() => {
     setError('')
-    setStep((current) => STEPS[Math.max(STEPS.indexOf(current) - 1, 0)])
+    setErrorDetail(null)
   }, [])
+
+  const goBack = useCallback(() => {
+    clearError()
+    setStep((current) => STEPS[Math.max(STEPS.indexOf(current) - 1, 0)])
+  }, [clearError])
 
   const patch = async (body: Record<string, unknown>) => {
     if (!guid) return
     setBusy(true)
-    setError('')
+    clearError()
     try {
       await api(`characters/${guid}`, { method: 'PATCH', body })
       advance()
@@ -432,11 +439,17 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
   const createCharacter = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
-    setError('')
+    clearError()
     try {
       const data = await api('characters/', { method: 'POST', body: { name: charName, level } })
       const created = extractGuid(data)
-      if (!created) throw new Error('No character guid came back from the create call')
+      if (!created) {
+        // The character may well have been created — we just cannot address it.
+        setErrorDetail(data)
+        throw new Error(
+          'The character was created but no id came back in a form this app recognises, so it cannot continue. The response is below.',
+        )
+      }
       setGuid(created)
       advance()
     } catch (err) {
@@ -482,9 +495,19 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
       </ol>
 
       {error && (
-        <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
-          {error}
-        </p>
+        <div className="space-y-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <p className="text-sm text-red-300">{error}</p>
+          {errorDetail !== null && (
+            <details>
+              <summary className="cursor-pointer text-xs text-red-300/80">
+                What the API actually sent back
+              </summary>
+              <pre className="mt-2 overflow-x-auto text-xs text-stone-300">
+                {JSON.stringify(errorDetail, null, 2)}
+              </pre>
+            </details>
+          )}
+        </div>
       )}
 
       {step !== 'name' && step !== 'sheet' && (
@@ -508,21 +531,33 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
               required
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-stone-500 outline-none focus:border-amber-500"
             />
-            <div className="flex gap-2">
-              <select
-                value={nameStyle}
-                onChange={(e) => setNameStyle(e.target.value)}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-stone-200 outline-none focus:border-amber-500 cursor-pointer"
-              >
-                {NAME_STYLES.map((style) => (
-                  <option key={style} value={style}>
-                    {style}
-                  </option>
-                ))}
-              </select>
-              <Button type="button" variant="ghost" onClick={suggestNames}>
-                Suggest
-              </Button>
+            {/* This only flavours the generated suggestions — picking "Elvish"
+                here does not make the character an elf. Race is the next step,
+                and the bare list of race names read as a race picker. */}
+            <div className="space-y-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3">
+              <p className="text-xs text-stone-400">
+                Stuck for a name? Generate a few. This only affects the suggestions — you pick your
+                race on the next step.
+              </p>
+              <div className="flex gap-2">
+                <select
+                  value={nameStyle}
+                  aria-label="Name style for suggestions"
+                  onChange={(e) => setNameStyle(e.target.value)}
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-stone-200 outline-none focus:border-amber-500 cursor-pointer"
+                >
+                  {NAME_STYLES.map((style) => (
+                    <option key={style} value={style}>
+                      {style === 'generic'
+                        ? 'Any style'
+                        : `${style.charAt(0).toUpperCase()}${style.slice(1)}-sounding names`}
+                    </option>
+                  ))}
+                </select>
+                <Button type="button" variant="ghost" onClick={suggestNames}>
+                  Suggest
+                </Button>
+              </div>
             </div>
             {suggestions.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -725,7 +760,7 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
               setCharacteristics([])
               setLanguages([])
               setSpells([])
-              setError('')
+              clearError()
               setStep('name')
             }}
           >

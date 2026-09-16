@@ -131,6 +131,17 @@ anywhere in it. Most often that is the API reporting a problem in a 200 — wron
 password, or an account that does not exist yet — and the message after the
 colon is the API's own words.
 
+### If creating a character fails
+
+"No id came back in a form this app recognises" means the create call returned
+2xx but `extractGuid` could not find the identifier the later PATCH calls need.
+The error panel shows the raw response; add the key to `GUID_KEYS` (or
+`GUID_FALLBACK_KEYS`) in `lib/shape.ts`.
+
+It searches `guid`/`uuid` and their camel and snake spellings first, then falls
+back to `id`/`characterId`, at any nesting depth, and accepts a number as well
+as a string — a numeric `id` used to be rejected outright.
+
 ### If a step comes up empty
 
 That means the response used field names the readers do not know.
