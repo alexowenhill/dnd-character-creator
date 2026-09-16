@@ -58,15 +58,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
 
   const result = await yonderFetch(upstreamPath, { method: req.method, token, json, form })
 
-  // A 3xx body is empty, so say what happened instead of returning nothing.
-  // This is the failure mode where a POST to a redirecting URL would otherwise
-  // be silently retried as a GET and look like a successful read.
+  // Only reachable when the redirect could not be re-sent — a cross-origin
+  // target, or a second redirect after the one hop yonderFetch allows.
   if (result.status >= 300 && result.status < 400) {
     return NextResponse.json(
       {
-        error: `Upstream redirected (${result.status}) instead of handling ${req.method} /api/${rest}`,
+        error: `Upstream redirected (${result.status}) and it could not be followed safely for ${req.method} /api/${rest}`,
         redirectedTo: result.redirectedTo ?? null,
-        hint: 'A POST answered with a redirect loses its body. Try the same path with or without a trailing slash.',
+        hint: 'A redirect to another host is not followed, because the bearer token must not be sent there.',
       },
       { status: 502, headers: { 'x-upstream-status': String(result.status) } },
     )
@@ -86,6 +85,9 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       'x-upstream-status': String(result.status),
       'x-upstream-content-type': result.contentType ?? 'none',
       'x-upstream-bytes': String(result.text.length),
+      ...(result.followedRedirectTo
+        ? { 'x-upstream-followed-redirect': result.followedRedirectTo }
+        : {}),
     },
   })
 }

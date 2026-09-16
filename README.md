@@ -84,18 +84,36 @@ The console has a one-click diagnosis for this. It checks the token with
 without a trailing slash, as JSON and as form data — then counts again, and says
 which combination worked or that none did.
 
-Two things it is built to catch:
+This is what found the redirect described below. The other thing it catches is a
+**create that is accepted but never persisted** — if every combination returns
+2xx and the character count does not move, the problem is server-side and no
+change here can fix it; the transcript is a complete reproduction to send to the
+API author.
 
-- **A redirect on the create route.** Per the fetch spec a 301/302 answering a
-  POST is retried as a GET with the body dropped, so `POST /api/characters/`
-  redirecting to `/api/characters` would silently become a read of the
-  characters list — a create that appears to succeed and returns an empty array.
-  `yonderFetch` therefore uses `redirect: 'manual'` and the proxy reports any
-  3xx rather than letting it turn into a phantom read.
-- **A create that is accepted but never persisted.** If every combination
-  returns 2xx and the character count does not move, the problem is server-side
-  and no change here can fix it. The transcript is a complete reproduction to
-  send to the API author.
+### The trailing slash on the create route (confirmed)
+
+The live API answers `POST /api/characters/` with a **301 to
+`/api/characters`**, even though the docs write the route with the slash.
+
+That matters more than it looks. Per the fetch spec a 301 or 302 answering a
+POST is retried **as a GET with the body dropped**, so the create silently
+became a read of the characters list: it returned `[]`, reported no error, and
+saved nothing. Because `fetch` follows redirects by default, none of this was
+visible — the symptom was just "create returns an empty array, and so does the
+list".
+
+`yonderFetch` handles it in two parts:
+
+- GET and HEAD follow redirects normally — there is no body to lose.
+- Anything carrying a body uses `redirect: 'manual'` and, on a 3xx, re-issues
+  the request to the `Location` with its method and body intact, which is what a
+  307/308 would have preserved. One hop only, so a loop cannot spin.
+
+That re-send is restricted to the same origin. A redirect pointing at another
+host is refused and reported, because following it would hand that host the
+bearer token.
+
+Both spellings of the create route therefore work. The UI uses the bare path.
 
 ### The API console
 

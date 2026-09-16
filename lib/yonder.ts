@@ -21,6 +21,8 @@ export type YonderResult = {
   text: string
   /** Set when upstream answered with a 3xx instead of doing the work. */
   redirectedTo?: string
+  /** Set when a body-carrying request was re-sent to a redirect target. */
+  followedRedirectTo?: string
   contentType?: string
 }
 
@@ -42,17 +44,42 @@ export async function yonderFetch(
     body = JSON.stringify(json)
   }
 
-  const res = await fetch(`${YONDER_BASE}${path}`, {
+  const carriesBody = method !== 'GET' && method !== 'HEAD'
+
+  // A GET may follow redirects normally — there is no body to lose. Anything
+  // with a body must not, because per the fetch spec a 301/302 is retried as a
+  // GET with the body dropped. The live API answers `POST /api/characters/`
+  // with a 301 to `/api/characters`, which silently became a read of the
+  // characters list: a create that appeared to succeed and returned [].
+  let res = await fetch(`${YONDER_BASE}${path}`, {
     method,
     headers,
     body,
     cache: 'no-store',
-    // Never follow redirects. Per the fetch spec a 301/302 answering a POST is
-    // retried as a GET with the body dropped, so a redirect on the create route
-    // would silently turn into a read of the characters list and look like a
-    // create that returned an empty list. Surface the 3xx instead.
-    redirect: 'manual',
+    redirect: carriesBody ? 'manual' : 'follow',
   })
+
+  let followed: string | undefined
+  if (carriesBody && res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location')
+    if (location) {
+      const target = new URL(location, YONDER_BASE)
+      // Only ever re-send to the same origin: the Authorization header must not
+      // follow a redirect off to another host.
+      if (target.origin === new URL(YONDER_BASE).origin) {
+        // Re-issue with the method and body intact — what a 307/308 would have
+        // preserved. One hop only, so a redirect loop cannot spin.
+        res = await fetch(target, {
+          method,
+          headers,
+          body,
+          cache: 'no-store',
+          redirect: 'manual',
+        })
+        followed = target.toString()
+      }
+    }
+  }
 
   const text = await res.text()
   let parsed: unknown = text
@@ -69,6 +96,7 @@ export async function yonderFetch(
     status: res.status,
     body: parsed,
     text,
+    followedRedirectTo: followed,
     redirectedTo: location ?? undefined,
     contentType: res.headers.get('content-type') ?? undefined,
   }

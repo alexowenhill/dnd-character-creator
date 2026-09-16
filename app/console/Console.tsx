@@ -16,7 +16,12 @@ type Entry = {
   ms: number
   response: unknown
   /** What the upstream API returned, as reported by the proxy. */
-  upstream?: { status: string | null; contentType: string | null; bytes: string | null }
+  upstream?: {
+    status: string | null
+    contentType: string | null
+    bytes: string | null
+    followedRedirect?: string | null
+  }
 }
 
 type Encoding = 'json' | 'form'
@@ -40,7 +45,14 @@ const PRESETS: { group: string; items: Preset[] }[] = [
     items: [
       { label: 'GET characters (list)', method: 'GET', path: 'characters' },
       {
+        // No trailing slash: the API 301s `/api/characters/` to `/api/characters`.
         label: 'POST create character',
+        method: 'POST',
+        path: 'characters',
+        body: JSON.stringify({ name: 'Test Character', level: 1 }, null, 2),
+      },
+      {
+        label: 'POST create (trailing slash — redirects)',
         method: 'POST',
         path: 'characters/',
         body: JSON.stringify({ name: 'Test Character', level: 1 }, null, 2),
@@ -305,6 +317,7 @@ export function Console({ signedIn }: { signedIn: boolean }) {
           status: res.headers.get('x-upstream-status'),
           contentType: res.headers.get('x-upstream-content-type'),
           bytes: res.headers.get('x-upstream-bytes'),
+          followedRedirect: res.headers.get('x-upstream-followed-redirect'),
         },
       }
     } catch (err) {
@@ -637,6 +650,11 @@ export function Console({ signedIn }: { signedIn: boolean }) {
                 {Array.isArray(entry.response) && (
                   <span className="rounded bg-white/10 px-2 py-0.5 text-stone-400">
                     array[{entry.response.length}]
+                  </span>
+                )}
+                {entry.upstream?.followedRedirect && (
+                  <span className="rounded bg-amber-500/20 px-2 py-0.5 text-amber-200">
+                    re-sent to {entry.upstream.followedRedirect.replace(/^https?:\/\/[^/]+/, '')}
                   </span>
                 )}
               </div>
