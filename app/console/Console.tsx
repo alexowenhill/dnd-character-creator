@@ -387,40 +387,68 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         `2. Characters before: ${beforeCount === null ? 'not a list — see the response' : beforeCount}.`,
       )
 
-      const name = `Diagnostic ${new Date().toISOString().slice(11, 19)}`
-      // The path question is settled — the API 301s the trailing-slash form and
-      // the proxy re-sends it — so vary the body, which is what the create is
-      // now rejecting.
-      const attempts: { label: string; path: string; enc: Encoding; body: unknown }[] = [
+      const stamp = new Date().toISOString().slice(11, 19)
+      const name = `Diagnostic ${stamp}`
+
+      // Path and encoding are both settled — every combination is refused with
+      // the same "Bad Request" — so the useful question is what the route wants
+      // instead. An empty or nonsense body is the highest-signal probe: an API
+      // with real validation answers it by naming the fields it is missing.
+      const attempts: {
+        label: string
+        path: string
+        enc: Encoding
+        body?: unknown
+        method?: Method
+        /** Probes a different route, so its reply says nothing about the body. */
+        otherRoute?: boolean
+      }[] = [
         { label: 'name + level, JSON', path: 'characters', enc: 'json', body: { name, level: 1 } },
-        { label: 'name + level, form data', path: 'characters', enc: 'form', body: { name, level: 1 } },
+        { label: 'name + level, form', path: 'characters', enc: 'form', body: { name, level: 1 } },
         { label: 'name only, JSON', path: 'characters', enc: 'json', body: { name } },
-        { label: 'name only, form data', path: 'characters', enc: 'form', body: { name } },
-        {
-          label: 'level as a string, JSON',
-          path: 'characters',
-          enc: 'json',
-          body: { name, level: '1' },
-        },
-        {
-          label: 'trailing slash (re-sent), JSON',
-          path: 'characters/',
-          enc: 'json',
-          body: { name, level: 1 },
-        },
+        { label: 'level as a string', path: 'characters', enc: 'json', body: { name, level: '1' } },
+        { label: 'name with no spaces', path: 'characters', enc: 'json', body: { name: `Diag${stamp.replace(/:/g, '')}`, level: 1 } },
+        // If validation exists, these two should complain about missing fields.
+        { label: 'EMPTY body {}', path: 'characters', enc: 'json', body: {} },
+        { label: 'EMPTY body, form', path: 'characters', enc: 'form', body: {} },
+        { label: 'nonsense body', path: 'characters', enc: 'json', body: { wibble: true } },
+        // Some routes read from the query string rather than the body.
+        { label: 'query string, no body', path: `characters?name=${encodeURIComponent(name)}&level=1`, enc: 'json' },
+        // Alternative spellings of the route, in case the docs name it wrongly.
+        { label: 'singular /api/character', path: 'character', enc: 'json', body: { name, level: 1 }, otherRoute: true },
+        { label: 'trailing slash (re-sent)', path: 'characters/', enc: 'json', body: { name, level: 1 } },
       ]
 
       let step = 3
+      const replies: string[] = []
       for (const attempt of attempts) {
-        const res = await call('POST', attempt.path, attempt.body, attempt.enc)
+        const res = await call(attempt.method ?? 'POST', attempt.path, attempt.body, attempt.enc)
         const isList = Array.isArray(res.response)
         // A redirect is reported separately as a 502 by the proxy, so a 200
         // carrying a list means the route answered but did not create anything.
         const detail = isList
           ? `returned a list of ${(res.response as unknown[]).length} — that is the characters list, not a created character`
           : `returned ${JSON.stringify(res.response)?.slice(0, 200)}`
-        lines.push(`${step}. POST ${attempt.label} → ${res.status}, ${detail}`)
+        lines.push(`${step}. ${attempt.label} → ${res.status}, ${detail}`)
+        // Only replies from the create route itself say anything about the body.
+        if (res.status >= 400 && !attempt.otherRoute) {
+          replies.push(`${res.status} ${JSON.stringify(res.response)}`)
+        }
         step += 1
+      }
+
+      // If every rejection is word-for-word identical, the route is failing
+      // before it ever looks at the fields — which is a different problem from
+      // one of our fields being wrong.
+      const distinct = new Set(replies)
+      if (replies.length && distinct.size === 1) {
+        lines.push(
+          `\nEvery rejection was identical (${[...distinct][0]}) — even for an empty body and a nonsense body. A route that validated its input would complain differently about those, so this is failing before it reads the fields, and no combination of name/level will get past it.`,
+        )
+      } else if (distinct.size > 1) {
+        lines.push(
+          `\nThe rejections differ, so the route IS reading the body — compare the lines above to see which field it is unhappy about.`,
+        )
       }
 
       const after = await call('GET', 'characters')
@@ -432,7 +460,7 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         lines.push(
           gained > 0
             ? `\nVERDICT: ${gained} character(s) were saved. The attempts above that returned a character are the ones that work — note the body and encoding of the first such line; that is what the app should send.`
-            : `\nVERDICT: nothing was saved. If the lines above are 4xx, the API is rejecting the body and the error text is the clue. If they are 2xx and the count still did not move, the create is accepted and not persisted, which is server-side. Either way "Copy all as text" below is a complete reproduction to send to the API author.`,
+            : `\nVERDICT: nothing was saved. Read the note above: if every rejection was identical the create route is refusing before it reads the body, which is server-side and nothing this app sends will get past it. "Copy all as text" below is a complete reproduction — the API author's email is on the docs page, and this is exactly what they need.`,
         )
       }
     } catch (err) {
@@ -585,9 +613,11 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         <div>
           <h2 className="text-sm font-medium text-amber-200">Why don&rsquo;t my characters save?</h2>
           <p className="mt-1 text-xs text-stone-400">
-            Checks the token, counts your characters, then tries creating one four ways — with and
-            without a trailing slash, as JSON and as form data — and counts again. Tells you which
-            combination works, or that none of them do.
+            Checks the token, counts your characters, then tries creating one eleven ways — both
+            encodings, name with and without level, an empty body, a nonsense body, the query
+            string, and alternative spellings of the route — and counts again. An empty body is the
+            telling one: a route that validates its input complains about missing fields, so if
+            every reply is identical the route is refusing before it reads the body at all.
           </p>
         </div>
         <Button type="button" variant="primary" size="sm" onClick={runDiagnosis} disabled={busy}>
