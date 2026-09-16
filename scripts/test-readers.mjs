@@ -1,0 +1,104 @@
+/**
+ * Checks the response readers against a range of plausible payload shapes.
+ *
+ * The upstream API does not document its response shapes, so lib/shape.ts and
+ * lib/sheet.ts probe for field names. These cases pin down the behaviour that
+ * matters — above all the alphabetical ability ids, where a silent mix-up would
+ * hand someone the wrong stats — and prove that an unrecognised shape degrades
+ * instead of crashing.
+ *
+ * Run against the real API with `npm run probe`; this needs no network.
+ *
+ *   npm test
+ */
+import { readSheet, modifierFor } from '../lib/sheet.ts'
+import { toOptions, extractGuid, extractRoll, bestThreeOfFour } from '../lib/shape.ts'
+
+let failed = 0
+const check = (label, cond, extra = '') => {
+  console.log(`${cond ? 'ok  ' : 'FAIL'} ${label}${cond ? '' : ` ${extra}`}`)
+  if (!cond) failed++
+}
+
+// --- readSheet across plausible shapes -----------------------------
+// Shape A: flat, abilities as list keyed by abilityId (alphabetical ids)
+const a = readSheet({
+  name: 'Thorin', level: 3,
+  race: { id: 1, name: 'Dwarf' },
+  class: { id: 2, name: 'Fighter', path: { name: 'Champion' } },
+  background: { name: 'Soldier' },
+  abilities: [
+    { abilityId: 5, score: 16 }, // STR
+    { abilityId: 3, score: 12 }, // DEX
+    { abilityId: 2, score: 15 }, // CON
+    { abilityId: 4, score: 9 },  // INT
+    { abilityId: 6, score: 13 }, // WIS
+    { abilityId: 1, score: 8 },  // CHA
+  ],
+  languages: [{ name: 'Common' }, { name: 'Dwarvish' }],
+  spells: [],
+})
+check('A: name', a.name === 'Thorin')
+check('A: race', a.race === 'Dwarf')
+check('A: class', a.className === 'Fighter')
+check('A: path', a.classPath === 'Champion', a.classPath)
+check('A: background', a.background === 'Soldier')
+check('A: STR first in sheet order', a.abilities[0].short === 'STR' && a.abilities[0].score === 16)
+check('A: CHA last, id 1', a.abilities[5].short === 'CHA' && a.abilities[5].score === 8)
+check('A: modifier STR 16 = +3', a.abilities[0].modifier === 3, String(a.abilities[0].modifier))
+check('A: languages', a.languages.join(',') === 'Common,Dwarvish', a.languages.join(','))
+check('A: not empty', a.empty === false)
+
+// Shape B: wrapped in envelope, abilities keyed by name, plain strings
+const b = readSheet({
+  character: {
+    characterName: 'Lyra',
+    level: 1,
+    race: 'Elf',
+    class: 'Wizard',
+    background: 'Sage',
+    abilities: { strength: 8, dexterity: 15, constitution: 12, intelligence: 17, wisdom: 13, charisma: 10 },
+    languages: ['Common', 'Elvish'],
+    spells: ['Magic Missile'],
+  },
+})
+check('B: envelope unwrapped', b.name === 'Lyra', b.name)
+check('B: race string', b.race === 'Elf')
+check('B: abilities by name, INT 17', b.abilities.find(x => x.short === 'INT').score === 17)
+check('B: INT mod +3', b.abilities.find(x => x.short === 'INT').modifier === 3)
+check('B: spells', b.spells.join(',') === 'Magic Missile')
+
+// Shape C: abilities as list keyed by ability NAME + "value"
+const c = readSheet({
+  name: 'Grok',
+  abilities: [{ name: 'Strength', value: 18 }, { name: 'CHA', value: 6 }],
+})
+check('C: by label', c.abilities.find(x => x.short === 'STR').score === 18)
+check('C: by short code', c.abilities.find(x => x.short === 'CHA').score === 6)
+
+// Shape D: total garbage -> empty flag set, no crash
+const d = readSheet({ wibble: true, frotz: [1, 2] })
+check('D: empty flagged', d.empty === true)
+check('D: six ability slots still present', d.abilities.length === 6)
+const e = readSheet(null)
+check('E: null safe', e.empty === true && e.abilities.length === 6)
+
+// modifiers
+check('mod 10 = 0', modifierFor(10) === 0)
+check('mod 9 = -1', modifierFor(9) === -1)
+check('mod 3 = -4', modifierFor(3) === -4)
+check('mod 20 = +5', modifierFor(20) === 5)
+
+// --- shape.ts helpers ------------------------------------------------
+check('toOptions bare array', toOptions([{ id: 1, name: 'Elf' }]).length === 1)
+check('toOptions enveloped', toOptions({ data: [{ id: 2, name: 'Orc' }] })[0].name === 'Orc')
+check('toOptions races key', toOptions({ races: [{ id: 3, name: 'Human' }] })[0].id === 3)
+check('toOptions strings', toOptions(['Alice', 'Bob'])[0].name === 'Alice')
+check('toOptions nested children', toOptions([{ id: 1, name: 'Fighter', paths: [{ id: 9, name: 'Champion' }] }])[0].children[0].name === 'Champion')
+check('extractGuid direct', extractGuid({ guid: 'abc' }) === 'abc')
+check('extractGuid nested', extractGuid({ character: { guid: 'xyz' } }) === 'xyz')
+check('extractRoll', (() => { const r = extractRoll({ guid: 'g1', rolls: { d6: [4, 5, 2, 6] } }); return r.guid === 'g1' && r.values.length === 4 })())
+check('bestThreeOfFour drops lowest', bestThreeOfFour([4, 5, 2, 6]) === 15, String(bestThreeOfFour([4, 5, 2, 6])))
+
+console.log(failed ? `\n${failed} FAILED` : '\nall passed')
+process.exitCode = failed ? 1 : 0

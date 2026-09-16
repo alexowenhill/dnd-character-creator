@@ -21,7 +21,12 @@ One page, walked through in steps:
 6. **Languages**
 7. **Spells** — only the ones this character can actually cast.
 
-Then it shows the finished character sheet.
+Then it shows the finished character sheet: race, class and path, background,
+the six ability scores with their modifiers, languages, spells and
+characteristics. The raw API response is one click away underneath.
+
+You can step back at any point; each step is saved independently, so going back
+and re-saving just overwrites that part.
 
 ## Running it locally
 
@@ -58,26 +63,68 @@ That also means endpoints this UI does not cover yet — encounters, creatures,
 the undocumented campaign map routes — already work through the same path if you
 want to build on them.
 
-`lib/shape.ts` normalises responses. The upstream API documents its request
-bodies but not its response shapes, so rather than assuming one shape it probes
-for the common envelope and field names, and falls back to showing raw JSON
-instead of crashing.
+The proxy takes the upstream path from the request URL rather than from Next's
+parsed route params, because a trailing slash matters upstream: the documented
+create route is `POST /api/characters/`, and Next would otherwise 308 the slash
+away before the proxy saw it. Hence `skipTrailingSlashRedirect` in
+`next.config.ts`.
 
-## Known unknowns
+## Response shapes
 
-This was built against the published documentation and Postman collection
-without being able to call the live API, so some details are educated guesses:
+The upstream API documents its request bodies but not its responses, so
+`lib/shape.ts` (option lists, dice rolls) and `lib/sheet.ts` (the finished
+character) probe for the common envelope and field names rather than assuming
+one. Anything they cannot find is left out of the sheet instead of crashing, and
+the raw JSON stays visible underneath.
 
-- **Option lists.** If races, classes or backgrounds come up empty, the response
-  shape is not one `lib/shape.ts` recognises. Check what the endpoint actually
-  returns and add the field name to the key lists at the top of that file.
-- **Class paths and background characteristics.** Assumed to arrive nested
-  inside the class/background objects. If they are separate endpoints, those
-  sub-steps will not appear.
-- **`abilityRolls`.** The published example is not valid JSON (it uses braces
-  where an array belongs). This sends an array.
-- **Login encoding.** The Postman collection sends login and register as form
-  data, so that is tried first, with a JSON retry if the server rejects it.
+### Checking them against the live API
+
+**The response readers have not been run against the real service.** This was
+built in an environment whose egress policy blocks
+`dndapi.ashleysheridan.co.uk`, so the shapes above are informed guesses.
+
+From a machine that can reach the API, this walks a character all the way
+through and reports what actually comes back:
+
+```bash
+npm run probe
+```
+
+It registers a throwaway account, creates a character, applies race, class and
+background, rolls and assigns all six abilities, then fetches the finished
+sheet — checking each of the app's readers against the real response and naming
+the file to fix when one is wrong. Reuse an existing account with
+`DND_EMAIL=… DND_PASSWORD=… npm run probe`. The full transcript lands in
+`probe-output.json`.
+
+It also resolves two things the docs do not pin down: whether login wants form
+or JSON encoding, and which path serves the language list (it tries
+`/api/game/languages`, `/api/characters/languages` and `/api/languages`).
+
+### What has been verified
+
+- `npm test` covers the response readers against a range of plausible payload
+  shapes — enveloped and bare, abilities keyed by id, by name and by short code,
+  and unrecognised junk — including the alphabetical ability ids, where a silent
+  mix-up would hand someone the wrong stats.
+- The whole flow has been walked end to end in a browser against a local mock of
+  the API: register, create, race, class and path, background and
+  characteristics, six dice rolls and assignment, languages, spells, and the
+  rendered sheet — plus that the token is never readable from JavaScript.
+
+Both of those prove the app's own wiring. Neither proves the guessed field
+names, which is what `npm run probe` is for.
+
+### If a step comes up empty
+
+That means the response used field names the readers do not know.
+
+- Option lists (races, classes, backgrounds, languages, spells) — add the key to
+  the lists at the top of `lib/shape.ts`.
+- The finished sheet — add it to the corresponding list in `lib/sheet.ts`.
+- Class paths and background characteristics are assumed to arrive nested inside
+  the class/background objects. If they turn out to be separate endpoints, those
+  sub-steps will not appear and need their own fetch.
 
 ## Notes on the rules
 
@@ -85,5 +132,8 @@ without being able to call the live API, so some details are educated guesses:
 - Ability scores are **rolled** — there is no point buy or standard array.
 - Ability ids are alphabetical upstream (1 is charisma, 5 is strength), which is
   not sheet order. `ABILITIES` in `lib/shape.ts` holds the mapping.
+- The score shown next to each roll is the usual best three of four. The server
+  keeps the raw roll and applies its own rule, so the saved score is whatever it
+  decides — the sheet at the end shows the authoritative values.
 - Character creation does not assign equipment, and derived numbers like HP and
   AC are not part of the flow.

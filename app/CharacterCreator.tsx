@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@/components/Button'
+import { CharacterSheet } from '@/components/CharacterSheet'
 import {
   ABILITIES,
   NAME_STYLES,
@@ -379,6 +380,14 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
     setStep((current) => STEPS[Math.min(STEPS.indexOf(current) + 1, STEPS.length - 1)])
   }, [])
 
+  // Steps are saved to the API one at a time, so going back is only about
+  // re-showing a step: the character already exists and each PATCH is
+  // independent, so re-saving a step simply overwrites that part.
+  const goBack = useCallback(() => {
+    setError('')
+    setStep((current) => STEPS[Math.max(STEPS.indexOf(current) - 1, 0)])
+  }, [])
+
   const patch = async (body: Record<string, unknown>) => {
     if (!guid) return
     setBusy(true)
@@ -459,6 +468,16 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
         </p>
+      )}
+
+      {step !== 'name' && step !== 'sheet' && (
+        <button
+          type="button"
+          onClick={goBack}
+          className="text-sm text-stone-400 hover:text-stone-300 cursor-pointer"
+        >
+          ← Back
+        </button>
       )}
 
       {step === 'name' && (
@@ -669,11 +688,9 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
       )}
 
       {step === 'sheet' && (
-        <Panel title={charName || 'Character sheet'} hint="Straight from the API.">
+        <Panel title="Your character" hint="Saved to D&amp;D Yonder — it will still be there next time you log in.">
           {sheet ? (
-            <pre className="overflow-x-auto rounded-xl border border-white/10 bg-black/30 p-4 text-xs text-stone-300">
-              {JSON.stringify(sheet, null, 2)}
-            </pre>
+            <CharacterSheet payload={sheet} fallbackName={charName} />
           ) : (
             <p className="text-sm text-stone-400">Loading…</p>
           )}
@@ -683,6 +700,15 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
               setGuid(null)
               setCharName('')
               setSheet(null)
+              setSuggestions([])
+              setRaceId(null)
+              setClassId(null)
+              setPathId(null)
+              setBackgroundId(null)
+              setCharacteristics([])
+              setLanguages([])
+              setSpells([])
+              setError('')
               setStep('name')
             }}
           >

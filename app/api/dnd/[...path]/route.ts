@@ -12,6 +12,8 @@ import { yonderFetch, DND_TOKEN_COOKIE } from '@/lib/yonder'
  * untouched. That also means endpoints not yet covered by the UI (encounters,
  * creatures, campaign maps) work without further changes.
  */
+const PREFIX = '/api/dnd/'
+
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }) {
   const { path } = await ctx.params
   const token = (await cookies()).get(DND_TOKEN_COOKIE)?.value
@@ -20,8 +22,20 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     return NextResponse.json({ error: 'Not signed in to D&D Yonder' }, { status: 401 })
   }
 
+  // Take the path from the URL rather than from `params`, because a trailing
+  // slash is significant upstream (`POST /api/characters/` is the documented
+  // create route) and the params array drops it. `skipTrailingSlashRedirect`
+  // in next.config.ts stops Next from rewriting it away before we get here.
+  const pathname = req.nextUrl.pathname
+  const rest = pathname.startsWith(PREFIX) ? pathname.slice(PREFIX.length) : path.join('/')
+
+  // The segments come straight from the URL, so refuse traversal outright.
+  if (rest.split('/').some((segment) => segment === '..' || segment === '.')) {
+    return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
+  }
+
   const search = req.nextUrl.search
-  const upstreamPath = `/api/${path.map(encodeURIComponent).join('/')}${search}`
+  const upstreamPath = `/api/${rest}${search}`
 
   let json: unknown = undefined
   if (req.method !== 'GET' && req.method !== 'DELETE') {
