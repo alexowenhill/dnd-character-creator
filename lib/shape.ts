@@ -186,6 +186,25 @@ export function extractGuid(payload: unknown): string | null {
   return findByKeys(payload, GUID_KEYS) ?? findByKeys(payload, GUID_FALLBACK_KEYS)
 }
 
+/**
+ * Read `GET /api/characters` into guid/name pairs.
+ *
+ * The docs document no response body for the create call and describe a
+ * character's guid as "returned by the characters list endpoint", so this is
+ * how a freshly created character gets identified.
+ */
+export function listCharacters(payload: unknown): { guid: string; name: string }[] {
+  return unwrapList(payload)
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null
+      const guid = findByKeys(entry, GUID_KEYS) ?? findByKeys(entry, GUID_FALLBACK_KEYS)
+      if (guid === null) return null
+      const name = pick(entry as Record<string, unknown>, NAME_KEYS)
+      return { guid, name: name === undefined ? '' : String(name) }
+    })
+    .filter((entry): entry is { guid: string; name: string } => entry !== null)
+}
+
 /** Find the roll guid + dice values in a dice response. */
 export function extractRoll(payload: unknown): { guid: string; values: number[] } | null {
   if (!payload || typeof payload !== 'object') return null

@@ -24,19 +24,16 @@ type Preset = { label: string; method: Method; path: string; body?: string }
  */
 const PRESETS: { group: string; items: Preset[] }[] = [
   {
-    group: 'Account',
+    group: 'Users',
     items: [
       { label: 'GET user', method: 'GET', path: 'user' },
-      { label: 'GET user/me', method: 'GET', path: 'user/me' },
-      { label: 'GET users/me', method: 'GET', path: 'users/me' },
-      { label: 'GET user/profile', method: 'GET', path: 'user/profile' },
+      { label: 'POST logout', method: 'POST', path: 'user/logout' },
     ],
   },
   {
     group: 'Characters',
     items: [
       { label: 'GET characters (list)', method: 'GET', path: 'characters' },
-      { label: 'GET characters/ (slash)', method: 'GET', path: 'characters/' },
       {
         label: 'POST create character',
         method: 'POST',
@@ -53,9 +50,7 @@ const PRESETS: { group: string; items: Preset[] }[] = [
       { label: 'GET races', method: 'GET', path: 'characters/races' },
       { label: 'GET classes', method: 'GET', path: 'characters/classes' },
       { label: 'GET backgrounds', method: 'GET', path: 'characters/backgrounds' },
-      { label: 'GET game/languages', method: 'GET', path: 'game/languages' },
-      { label: 'GET characters/languages', method: 'GET', path: 'characters/languages' },
-      { label: 'GET languages', method: 'GET', path: 'languages' },
+      { label: 'GET languages', method: 'GET', path: 'game/languages' },
     ],
   },
   {
@@ -118,7 +113,7 @@ const PRESETS: { group: string; items: Preset[] }[] = [
     ],
   },
   {
-    group: 'Game',
+    group: 'Dice',
     items: [
       {
         label: 'POST roll 4d6',
@@ -126,8 +121,85 @@ const PRESETS: { group: string; items: Preset[] }[] = [
         path: 'game/dice',
         body: JSON.stringify({ dice: { d6: 4 } }, null, 2),
       },
+      {
+        label: 'POST roll 4d6 + 2d20',
+        method: 'POST',
+        path: 'game/dice',
+        body: JSON.stringify({ dice: { d6: 4, d20: 2 } }, null, 2),
+      },
+    ],
+  },
+  {
+    group: 'Names',
+    items: [
+      { label: 'GET names (generic)', method: 'GET', path: 'names' },
       { label: 'GET names/dwarf', method: 'GET', path: 'names/dwarf' },
-      { label: 'GET names', method: 'GET', path: 'names' },
+      { label: 'GET names/elf', method: 'GET', path: 'names/elf' },
+      { label: 'GET names/tiefling', method: 'GET', path: 'names/tiefling' },
+      { label: 'GET names/angel', method: 'GET', path: 'names/angel' },
+    ],
+  },
+  {
+    group: 'Spells',
+    items: [
+      { label: 'GET all spells', method: 'GET', path: 'game/spells' },
+      { label: 'GET cantrips (level 0)', method: 'GET', path: 'game/spells/level/0' },
+      { label: 'GET level 1 spells', method: 'GET', path: 'game/spells/level/1' },
+      { label: 'GET evocation', method: 'GET', path: 'game/spells/school/evocation' },
+      { label: 'GET wizard spells (class 12)', method: 'GET', path: 'game/spells/class/12' },
+      { label: 'GET wizard cantrips', method: 'GET', path: 'game/spells/class/12/level/0' },
+      {
+        label: 'GET evocation level 1',
+        method: 'GET',
+        path: 'game/spells/school/evocation/level/1',
+      },
+    ],
+  },
+  {
+    group: 'Items',
+    items: [
+      { label: 'GET weapons', method: 'GET', path: 'game/items/weapon' },
+      { label: 'GET armor', method: 'GET', path: 'game/items/armor' },
+      { label: 'GET potions', method: 'GET', path: 'game/items/potion' },
+      { label: 'GET packs', method: 'GET', path: 'game/items/pack' },
+      { label: 'GET random weapon', method: 'GET', path: 'game/items/weapon/random' },
+      { label: 'GET random armor', method: 'GET', path: 'game/items/armor/random' },
+      { label: 'GET random book', method: 'GET', path: 'game/items/book/random' },
+      { label: 'GET random gemstone', method: 'GET', path: 'game/items/gemstone/random' },
+    ],
+  },
+  {
+    group: 'Creatures',
+    items: [
+      { label: 'GET dragons', method: 'GET', path: 'creatures/dragon' },
+      { label: 'GET beasts', method: 'GET', path: 'creatures/beast' },
+      { label: 'GET undead', method: 'GET', path: 'creatures/undead' },
+      { label: 'GET humanoids', method: 'GET', path: 'creatures/humanoid' },
+    ],
+  },
+  {
+    group: 'Encounters',
+    items: [
+      {
+        label: 'POST encounter (forest, medium)',
+        method: 'POST',
+        path: 'encounters',
+        body: JSON.stringify(
+          { characters: ['{guid}'], difficulty: 2, environment: 'forest' },
+          null,
+          2,
+        ),
+      },
+      {
+        label: 'POST encounter (underdark, deadly)',
+        method: 'POST',
+        path: 'encounters',
+        body: JSON.stringify(
+          { characters: ['{guid}'], difficulty: 4, environment: 'underdark' },
+          null,
+          2,
+        ),
+      },
     ],
   },
 ]
@@ -175,7 +247,8 @@ export function Console({ signedIn }: { signedIn: boolean }) {
 
     if (sendsBody && body.trim()) {
       try {
-        parsed = JSON.parse(body)
+        // {guid} is substituted in the body too, for encounters and the like.
+        parsed = JSON.parse(body.replace(/\{guid\}/g, guid))
       } catch (err) {
         setBodyError(`Body is not valid JSON: ${(err as Error).message}`)
         return
@@ -314,7 +387,9 @@ export function Console({ signedIn }: { signedIn: boolean }) {
         </div>
 
         <label className="flex flex-wrap items-center gap-2 text-xs text-stone-400">
-          <span className="whitespace-nowrap">Captured guid — used wherever a path says {'{guid}'}</span>
+          <span className="whitespace-nowrap">
+            Captured guid — substituted for {'{guid}'} in the path and the body
+          </span>
           <input
             value={guid}
             onChange={(e) => setGuid(e.target.value)}

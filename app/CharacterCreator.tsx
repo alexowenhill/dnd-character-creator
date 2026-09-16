@@ -9,6 +9,7 @@ import {
   bestThreeOfFour,
   extractGuid,
   extractRoll,
+  listCharacters,
   toOptions,
   type Option,
 } from '@/lib/shape'
@@ -441,15 +442,40 @@ export function CharacterCreator({ signedIn: initiallySignedIn }: { signedIn: bo
     setBusy(true)
     clearError()
     try {
+      // The docs document no response body for the create call and say a guid
+      // is "returned by the characters list endpoint", so note what exists
+      // beforehand and look for what is new afterwards.
+      const before = await api('characters')
+        .then(listCharacters)
+        .catch(() => [] as ReturnType<typeof listCharacters>)
+      const knownGuids = new Set(before.map((entry) => entry.guid))
+
       const data = await api('characters/', { method: 'POST', body: { name: charName, level } })
-      const created = extractGuid(data)
+
+      let created = extractGuid(data)
+
       if (!created) {
-        // The character may well have been created — we just cannot address it.
-        setErrorDetail(data)
-        throw new Error(
-          'The character was created but no id came back in a form this app recognises, so it cannot continue. The response is below.',
-        )
+        const after = await api('characters')
+          .then(listCharacters)
+          .catch(() => [] as ReturnType<typeof listCharacters>)
+        const fresh = after.filter((entry) => !knownGuids.has(entry.guid))
+
+        created =
+          // A new entry with the name we just used is the safest match.
+          fresh.find((entry) => entry.name === charName)?.guid ??
+          (fresh.length === 1 ? fresh[0].guid : null) ??
+          // Nothing new showed up: fall back to the last one carrying the name.
+          after.filter((entry) => entry.name === charName).pop()?.guid ??
+          null
+
+        if (!created) {
+          setErrorDetail({ createResponse: data, charactersList: after })
+          throw new Error(
+            'The character was created, but it could not be found in the characters list afterwards, so there is no guid to continue with. Both responses are below.',
+          )
+        }
       }
+
       setGuid(created)
       advance()
     } catch (err) {

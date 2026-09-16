@@ -12,7 +12,7 @@
  *   npm test
  */
 import { readSheet, modifierFor } from '../lib/sheet.ts'
-import { toOptions, extractGuid, extractRoll, bestThreeOfFour, extractToken, describeUpstream } from '../lib/shape.ts'
+import { toOptions, extractGuid, extractRoll, bestThreeOfFour, extractToken, describeUpstream, listCharacters } from '../lib/shape.ts'
 
 let failed = 0
 const check = (label, cond, extra = '') => {
@@ -117,6 +117,23 @@ check('extractRoll numeric guid', (() => {
 })())
 check('extractRoll', (() => { const r = extractRoll({ guid: 'g1', rolls: { d6: [4, 5, 2, 6] } }); return r.guid === 'g1' && r.values.length === 4 })())
 check('bestThreeOfFour drops lowest', bestThreeOfFour([4, 5, 2, 6]) === 15, String(bestThreeOfFour([4, 5, 2, 6])))
+
+// --- listCharacters: where a guid really comes from -------------------
+check('listCharacters bare array', listCharacters([{ guid: 'a', name: 'Thorin' }]).length === 1)
+check('listCharacters reads name', listCharacters([{ guid: 'a', name: 'Thorin' }])[0].name === 'Thorin')
+check('listCharacters enveloped', listCharacters({ data: [{ guid: 'b', name: 'Lyra' }] })[0].guid === 'b')
+check('listCharacters characters key', listCharacters({ characters: [{ guid: 'c', name: 'X' }] })[0].guid === 'c')
+check('listCharacters numeric id', listCharacters([{ id: 7, name: 'Grok' }])[0].guid === '7')
+check('listCharacters skips entries with no id', listCharacters([{ name: 'nope' }]).length === 0)
+check('listCharacters missing name -> empty string', listCharacters([{ guid: 'd' }])[0].name === '')
+check('listCharacters null safe', listCharacters(null).length === 0)
+check('listCharacters finds the new one by diff', (() => {
+  const before = listCharacters([{ guid: 'a', name: 'Old' }])
+  const after = listCharacters([{ guid: 'a', name: 'Old' }, { guid: 'b', name: 'New' }])
+  const known = new Set(before.map((c) => c.guid))
+  const fresh = after.filter((c) => !known.has(c.guid))
+  return fresh.length === 1 && fresh[0].guid === 'b'
+})())
 
 // --- extractToken: the shapes Laravel auth endpoints actually use -----
 check('token: top level', extractToken({ token: 'abc.def.ghi' }) === 'abc.def.ghi')

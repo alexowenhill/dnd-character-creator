@@ -114,9 +114,30 @@ the file to fix when one is wrong. Reuse an existing account with
 `DND_EMAIL=… DND_PASSWORD=… npm run probe`. The full transcript lands in
 `probe-output.json`.
 
-It also resolves two things the docs do not pin down: whether login wants form
-or JSON encoding, and which path serves the language list (it tries
-`/api/game/languages`, `/api/characters/languages` and `/api/languages`).
+It also resolves what the docs leave open: whether login wants form or JSON
+encoding, and the exact shape of each option list.
+
+### Confirmed against the published docs
+
+These started as guesses and the documentation has since settled them:
+
+- Ability ids really are alphabetical — 1 charisma, 2 constitution, 3 dexterity,
+  4 intelligence, 5 strength, 6 wisdom. `ABILITIES` matches.
+- Languages live at `GET /api/game/languages`.
+- `GET /api/names` and `/api/names/{type}` return `{ style, names: [...] }`.
+- Dice return `{ rolls: { d6: [...] }, guid }`.
+- Register returns `{ user, token }`; login returns `{ token }`.
+- `classPathId` is an array; the `abilityRolls` example in the docs is invalid
+  JSON (braces around a list) and an array is correct.
+
+### Not wired into the UI yet
+
+The API also covers items (`/api/game/items/{type}` and `/random`), a full spell
+index (`/api/game/spells` by level, school and class), creatures
+(`/api/creatures/{type}`) and encounter generation (`POST /api/encounters`).
+None of that is part of character creation, so the wizard does not use it — but
+every one of those endpoints works through the proxy and is a preset in the
+console.
 
 ### What has been verified
 
@@ -148,16 +169,18 @@ anywhere in it. Most often that is the API reporting a problem in a 200 — wron
 password, or an account that does not exist yet — and the message after the
 colon is the API's own words.
 
-### If creating a character fails
+### Where a character's guid comes from
 
-"No id came back in a form this app recognises" means the create call returned
-2xx but `extractGuid` could not find the identifier the later PATCH calls need.
-The error panel shows the raw response; add the key to `GUID_KEYS` (or
-`GUID_FALLBACK_KEYS`) in `lib/shape.ts`.
+`POST /api/characters/` documents no response body, and the docs describe a
+character's guid as "returned by the characters list endpoint". So creating a
+character is two calls: the app notes the character list before creating, posts
+the new character, and if no guid came back it re-reads
+`GET /api/characters` and takes the entry that was not there before (falling
+back to a name match).
 
-It searches `guid`/`uuid` and their camel and snake spellings first, then falls
-back to `id`/`characterId`, at any nesting depth, and accepts a number as well
-as a string — a numeric `id` used to be rejected outright.
+If the guid *is* in the create response it is used directly. `extractGuid`
+searches `guid`/`uuid` and their camel and snake spellings first, then
+`id`/`characterId`, at any depth, accepting a number as well as a string.
 
 ### If a step comes up empty
 
