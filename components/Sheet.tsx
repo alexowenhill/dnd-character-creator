@@ -33,6 +33,27 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
 
   const [checks, setChecks] = useState<Partial<Record<AbilityKey, Check>>>({})
   const [viewingSpell, setViewingSpell] = useState<string | null>(null)
+  /** Spells this character has no stored description for get looked up live,
+   *  on demand, the first time they're pressed — undefined: not tried yet,
+   *  null: tried and found nothing, string: found. Keeps old characters (made
+   *  before descriptions were saved) and hand-typed spells working too. */
+  const [liveDescriptions, setLiveDescriptions] = useState<Record<string, string | null>>({})
+  const [lookupBusy, setLookupBusy] = useState<string | null>(null)
+
+  const viewSpell = async (spell: string) => {
+    setViewingSpell((current) => (current === spell ? null : spell))
+    if (c.spellDescriptions?.[spell] || liveDescriptions[spell] !== undefined) return
+    setLookupBusy(spell)
+    try {
+      const res = await fetch(`/api/spells?classId=${c.classId}&name=${encodeURIComponent(spell)}`)
+      const data = (await res.json()) as { spell?: { desc?: string } | null }
+      setLiveDescriptions((prev) => ({ ...prev, [spell]: data.spell?.desc || null }))
+    } catch {
+      setLiveDescriptions((prev) => ({ ...prev, [spell]: null }))
+    } finally {
+      setLookupBusy((current) => (current === spell ? null : current))
+    }
+  }
 
   /** Roll a d20 and add the ability's modifier — a quick check, not saved anywhere. */
   const rollCheck = async (key: AbilityKey, modifier: number) => {
@@ -229,7 +250,7 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
                         <button
                           key={spell}
                           type="button"
-                          onClick={() => setViewingSpell((current) => (current === spell ? null : spell))}
+                          onClick={() => viewSpell(spell)}
                           className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
                             viewingSpell === spell
                               ? 'border-sky-400 bg-sky-500/10 text-stone-100'
@@ -250,7 +271,7 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
                         <button
                           key={spell}
                           type="button"
-                          onClick={() => setViewingSpell((current) => (current === spell ? null : spell))}
+                          onClick={() => viewSpell(spell)}
                           className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
                             viewingSpell === spell
                               ? 'border-sky-400 bg-sky-500/10 text-stone-100'
@@ -267,8 +288,11 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
                   <div className="rounded-lg border border-sky-500/25 bg-sky-500/[0.06] p-3">
                     <h4 className="text-sm font-medium text-stone-100">{viewingSpell}</h4>
                     <p className="mt-1 text-xs leading-relaxed text-stone-300">
-                      {c.spellDescriptions?.[viewingSpell] ||
-                        'No description was saved for this spell — it was likely typed in by hand.'}
+                      {c.spellDescriptions?.[viewingSpell] ??
+                        (lookupBusy === viewingSpell
+                          ? 'Looking it up…'
+                          : liveDescriptions[viewingSpell] ||
+                            'No description found for this spell, saved or live — it may have been typed in by hand, or the spell list is unavailable right now.')}
                     </p>
                   </div>
                 )}
