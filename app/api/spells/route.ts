@@ -67,7 +67,15 @@ export async function GET(req: NextRequest) {
     })
   }
 
+  // The endpoint's `level` path segment is actually a ceiling, not a filter —
+  // asking for level 1 also returns every cantrip. Each spell carries its own
+  // real level (GameSpellResource always includes it), so filter to an exact
+  // match rather than trusting the route to have done it.
   const spells = toOptions(result.body)
+    .filter((option) => {
+      const rawLevel = (option.raw as Record<string, unknown>).level
+      return typeof rawLevel === 'number' ? rawLevel === level : true
+    })
     .map((option) => ({ id: String(option.id), name: option.name, desc: option.desc }))
     .slice(0, 80)
 
