@@ -221,7 +221,7 @@ export const QUESTIONS: Question[] = [
         id: 'fists',
         label: 'They find out why that was a mistake',
         weights: {
-          classes: { barbarian: 3, fighter: 1, 'half-orc': 0 },
+          classes: { barbarian: 3, fighter: 1 },
           races: { 'half-orc': 2, dragonborn: 1 },
           alignments: { cn: 1, ce: 1 },
           abilities: { str: 1 },
