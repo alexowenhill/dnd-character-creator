@@ -28,6 +28,22 @@ import {
 
 type Roll = { dice: number[]; total: number; guid?: string }
 
+/**
+ * A distinct tint per quiz question, purely so scrolling through seven of them
+ * in a row reads as seven separate questions rather than one long list.
+ * Selecting an answer still turns amber everywhere in the app — that
+ * convention stays put; only the question's own card is tinted.
+ */
+const QUESTION_THEMES = [
+  { border: 'border-rose-500/25', bg: 'bg-rose-500/[0.04]', badge: 'bg-rose-500/20 text-rose-300' },
+  { border: 'border-amber-500/25', bg: 'bg-amber-500/[0.04]', badge: 'bg-amber-500/20 text-amber-300' },
+  { border: 'border-lime-500/25', bg: 'bg-lime-500/[0.04]', badge: 'bg-lime-500/20 text-lime-300' },
+  { border: 'border-teal-500/25', bg: 'bg-teal-500/[0.04]', badge: 'bg-teal-500/20 text-teal-300' },
+  { border: 'border-sky-500/25', bg: 'bg-sky-500/[0.04]', badge: 'bg-sky-500/20 text-sky-300' },
+  { border: 'border-violet-500/25', bg: 'bg-violet-500/[0.04]', badge: 'bg-violet-500/20 text-violet-300' },
+  { border: 'border-fuchsia-500/25', bg: 'bg-fuchsia-500/[0.04]', badge: 'bg-fuchsia-500/20 text-fuchsia-300' },
+]
+
 const STEPS = [
   'quiz', 'race', 'class', 'background', 'alignment', 'abilities', 'skills', 'equipment', 'spells', 'name',
 ] as const
@@ -129,6 +145,7 @@ export function Wizard({
 
   const [rolls, setRolls] = useState<Roll[]>([])
   const [rollSource, setRollSource] = useState<'yonder' | 'local' | null>(null)
+  const [rollSourceReason, setRollSourceReason] = useState('')
   /** ability -> index into rolls */
   const [assignment, setAssignment] = useState<Partial<Record<AbilityKey, number>>>({})
   const [improvements, setImprovements] = useState<Partial<Record<AbilityKey, number>>>({})
@@ -175,9 +192,14 @@ export function Wizard({
     try {
       const res = await fetch('/api/roll', { method: 'POST' })
       if (!res.ok) throw new Error('Could not roll — try again.')
-      const data = (await res.json()) as { rolls: Roll[]; source: 'yonder' | 'local' }
+      const data = (await res.json()) as {
+        rolls: Roll[]
+        source: 'yonder' | 'local'
+        reason?: string
+      }
       setRolls(data.rolls)
       setRollSource(data.source)
+      setRollSourceReason(data.reason ?? '')
 
       // Offer a sensible arrangement straight away.
       const suggested = suggestAssignment(data.rolls.map((roll) => roll.total), classId)
@@ -260,9 +282,18 @@ export function Wizard({
     try {
       const style = race?.nameStyle ?? ''
       const res = await fetch(`/api/names?style=${encodeURIComponent(style)}`)
-      const data = (await res.json()) as { names: string[] }
+      const data = (await res.json()) as { names: string[]; reason?: string }
       setSuggestions(data.names ?? [])
-      if (!data.names?.length) setError('The name generator is not available right now — type one in.')
+      if (!data.names?.length) {
+        // The reason distinguishes "nobody set up the account" from "the
+        // password is wrong" from "the API itself is down" — worth showing
+        // rather than a single generic message for all three.
+        setError(
+          data.reason
+            ? `Name generator unavailable (${data.reason}) — type one in instead.`
+            : 'The name generator is not available right now — type one in.',
+        )
+      }
     } catch {
       setError('The name generator is not available right now — type one in.')
     }
@@ -376,28 +407,38 @@ export function Wizard({
           title="Seven questions"
           hint="There are no wrong answers — they just point at a character that will suit you. You can override everything afterwards."
         >
-          <div className="space-y-6">
-            {QUESTIONS.map((question, index) => (
-              <div key={question.id} className="space-y-2">
-                <p className="text-sm font-medium text-stone-200">
-                  <span className="mr-2 text-stone-600">{index + 1}.</span>
-                  {question.prompt}
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {question.answers.map((answer) => (
-                    <Card
-                      key={answer.id}
-                      title={answer.label}
-                      blurb={answer.detail}
-                      selected={quizAnswers[question.id] === answer.id}
-                      onClick={() =>
-                        setQuizAnswers((prev) => ({ ...prev, [question.id]: answer.id }))
-                      }
-                    />
-                  ))}
+          <div className="space-y-4">
+            {QUESTIONS.map((question, index) => {
+              const theme = QUESTION_THEMES[index % QUESTION_THEMES.length]
+              return (
+                <div
+                  key={question.id}
+                  className={`space-y-3 rounded-2xl border ${theme.border} ${theme.bg} p-4`}
+                >
+                  <p className="flex items-start gap-3 text-sm font-medium text-stone-200">
+                    <span
+                      className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${theme.badge}`}
+                    >
+                      {index + 1}
+                    </span>
+                    <span className="pt-0.5">{question.prompt}</span>
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {question.answers.map((answer) => (
+                      <Card
+                        key={answer.id}
+                        title={answer.label}
+                        blurb={answer.detail}
+                        selected={quizAnswers[question.id] === answer.id}
+                        onClick={() =>
+                          setQuizAnswers((prev) => ({ ...prev, [question.id]: answer.id }))
+                        }
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </Panel>
       )}
@@ -547,8 +588,10 @@ export function Wizard({
                     </span>
                   )
                 })}
-                <span className="text-xs text-stone-500">
-                  {rollSource === 'yonder' ? 'rolled by the D&D Yonder dice API' : 'rolled locally'}
+                <span className="text-xs text-stone-500" title={rollSourceReason || undefined}>
+                  {rollSource === 'yonder'
+                    ? 'rolled by the D&D Yonder dice API'
+                    : `rolled locally${rollSourceReason ? ` (Yonder: ${rollSourceReason})` : ''}`}
                 </span>
               </div>
 

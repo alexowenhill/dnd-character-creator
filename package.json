@@ -8,8 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node scripts/test-rules.mjs",
-    "probe": "node scripts/probe.mjs"
+    "test": "node scripts/test-rules.mjs && node scripts/test-yonder-account.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.0",

@@ -110,11 +110,28 @@ nothing:
 
 All four degrade to something sensible if the API is slow, down, or
 unconfigured. Leave `YONDER_EMAIL` and `YONDER_PASSWORD` unset and the app works
-fine without it.
+fine without it, just without live names, dice, spells or items.
 
 One D&D Yonder account serves the whole site. Players never see it and never
 sign in to it — the credentials stay in environment variables and the token
 stays on the server.
+
+### Setting up the shared account
+
+Pick any email and password and set them as `YONDER_EMAIL` / `YONDER_PASSWORD`.
+Nothing needs to be registered by hand first: the first request that needs a
+token logs in, and if that account does not exist yet — which is what a brand
+new `YONDER_EMAIL`/`YONDER_PASSWORD` pair looks like — it registers it and logs
+in again. This matters because `POST /api/user/register` on the real API
+returns no token at all, just a confirmation message, so a login-only client
+would 401 forever against an email nobody has created yet.
+
+If names, dice, spells or items are not appearing, check the `reason` field on
+the relevant response (`/api/names`, `/api/roll`, `/api/spells`, `/api/items`
+all include one whenever `source` is `"unavailable"` or dice fall back to
+`"local"`) — it says plainly whether the account is unconfigured, the password
+is wrong, or the API itself refused the request, rather than a single
+undifferentiated "not working".
 
 ## Notes on the rules
 

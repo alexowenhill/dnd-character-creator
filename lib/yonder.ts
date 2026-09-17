@@ -109,4 +109,4 @@ export async function yonderFetch(
   }
 }
 
-export * from './shape'
+export * from './shape.ts'

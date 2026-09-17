@@ -10,7 +10,7 @@
 
 import { randomInt } from 'node:crypto'
 import { yonderFetch } from './yonder.ts'
-import { yonderToken } from './yonder-account.ts'
+import { yonderTokenResult } from './yonder-account.ts'
 
 export type AbilityRoll = {
   /** The four dice, highest first. */
@@ -24,6 +24,8 @@ export type AbilityRoll = {
 export type RollSet = {
   rolls: AbilityRoll[]
   source: 'yonder' | 'local'
+  /** Why Yonder was skipped, when source is 'local'. */
+  reason?: string
 }
 
 function bestThreeOfFour(values: number[]): number {
@@ -61,7 +63,7 @@ function readYonderRoll(payload: unknown): AbilityRoll | null {
 
 /** Six ability rolls of 4d6-drop-lowest. */
 export async function rollAbilities(): Promise<RollSet> {
-  const token = await yonderToken()
+  const { token, reason } = await yonderTokenResult()
 
   if (token) {
     try {
@@ -76,10 +78,19 @@ export async function rollAbilities(): Promise<RollSet> {
 
       // All six or none — a half-Yonder, half-local set would be confusing.
       if (rolls.length === 6) return { rolls, source: 'yonder' }
-    } catch {
-      // Fall through to local rolling.
+      return {
+        rolls: Array.from({ length: 6 }, rollLocally),
+        source: 'local',
+        reason: `Yonder returned ${rolls.length}/6 usable rolls`,
+      }
+    } catch (err) {
+      return {
+        rolls: Array.from({ length: 6 }, rollLocally),
+        source: 'local',
+        reason: `Yonder request failed: ${(err as Error).message}`,
+      }
     }
   }
 
-  return { rolls: Array.from({ length: 6 }, rollLocally), source: 'local' }
+  return { rolls: Array.from({ length: 6 }, rollLocally), source: 'local', reason }
 }

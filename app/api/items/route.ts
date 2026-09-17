@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireSession } from '@/lib/guard'
-import { yonderFetch, toOptions } from '@/lib/yonder'
-import { yonderToken } from '@/lib/yonder-account'
+import { yonderFetch, toOptions, describeUpstream } from '@/lib/yonder'
+import { yonderTokenResult } from '@/lib/yonder-account'
 
 const TYPES = new Set([
   'armor', 'book', 'clothing', 'food', 'other', 'pack', 'potion',
@@ -24,11 +24,17 @@ export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get('type') ?? ''
   if (!TYPES.has(type)) return NextResponse.json({ items: [], source: 'unavailable' })
 
-  const token = await yonderToken()
-  if (!token) return NextResponse.json({ items: [], source: 'unavailable' })
+  const { token, reason } = await yonderTokenResult()
+  if (!token) return NextResponse.json({ items: [], source: 'unavailable', reason })
 
   const result = await yonderFetch(`/api/game/items/${encodeURIComponent(type)}`, { token })
-  if (!result.ok) return NextResponse.json({ items: [], source: 'unavailable' })
+  if (!result.ok) {
+    return NextResponse.json({
+      items: [],
+      source: 'unavailable',
+      reason: `items request failed: ${result.status} ${describeUpstream(result.body)}`,
+    })
+  }
 
   const items = toOptions(result.body)
     .map((option) => {
