@@ -128,6 +128,9 @@ async function PartyList() {
                   <Link href={`/create?reset=${character.id}`} className="text-stone-500 hover:text-amber-400">
                     Start over
                   </Link>
+                  <a href={`/api/characters/${character.id}/pdf`} className="text-stone-500 hover:text-emerald-400">
+                    Export PDF
+                  </a>
                 </div>
               </div>
             )
