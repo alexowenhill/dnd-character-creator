@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { signedIn } from '@/lib/guard'
+import { listCampaigns, listCharacters } from '@/lib/store'
+import { ResetEverything } from '@/components/ResetEverything'
 import { Console } from './Console'
 
 export const dynamic = 'force-dynamic'
@@ -11,6 +13,8 @@ export const metadata = {
 
 export default async function ConsolePage() {
   if (!(await signedIn())) redirect('/')
+
+  const [characters, campaigns] = await Promise.all([listCharacters(), listCampaigns()])
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-10 space-y-6">
@@ -27,6 +31,10 @@ export default async function ConsolePage() {
       </header>
 
       <Console />
+
+      <footer className="border-t border-white/5 pt-4">
+        <ResetEverything characterCount={characters.length} campaignCount={campaigns.length} />
+      </footer>
     </main>
   )
 }

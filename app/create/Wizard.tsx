@@ -47,11 +47,12 @@ const QUESTION_THEMES = [
 ]
 
 const STEPS = [
-  'quiz', 'race', 'class', 'background', 'alignment', 'abilities', 'skills', 'equipment', 'spells', 'name',
+  'player', 'quiz', 'race', 'class', 'background', 'alignment', 'abilities', 'skills', 'equipment', 'spells', 'name',
 ] as const
 type Step = (typeof STEPS)[number]
 
 const STEP_LABELS: Record<Step, string> = {
+  player: 'Player',
   quiz: 'Questions',
   race: 'Race',
   class: 'Class',
@@ -151,7 +152,7 @@ export function Wizard({
   const editing = mode === 'edit' && Boolean(initial)
   const editingId = mode !== 'create' ? initial?.id : undefined
 
-  const [step, setStep] = useState<Step>(editing ? 'name' : 'quiz')
+  const [step, setStep] = useState<Step>(editing ? 'name' : 'player')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -408,6 +409,7 @@ export function Wizard({
 
   const canContinue = (): boolean => {
     switch (step) {
+      case 'player': return playerName.trim().length > 0
       case 'quiz': return quizComplete
       case 'race': return Boolean(raceId) && (!race?.subraces?.length || Boolean(subraceId))
       case 'class': return Boolean(classId) && Boolean(subclassId)
@@ -462,6 +464,27 @@ export function Wizard({
         <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
         </p>
+      )}
+
+      {step === 'player' && (
+        <Panel
+          title="Who's playing?"
+          hint="So the party page — and everyone else at the table — knows whose character this is."
+        >
+          <div className="max-w-sm space-y-2">
+            <label className="block text-sm text-stone-300" htmlFor="player-name">
+              Your name
+            </label>
+            <input
+              id="player-name"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Required"
+              autoFocus
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-stone-600 outline-none focus:border-amber-500"
+            />
+          </div>
+        </Panel>
       )}
 
       {step === 'quiz' && (
@@ -989,7 +1012,7 @@ export function Wizard({
       )}
 
       {step === 'name' && (
-        <Panel title="Last thing — who are they?">
+        <Panel title="Last thing — who are they?" hint={playerName ? `Playing as ${playerName}.` : undefined}>
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="block text-sm text-stone-300" htmlFor="char-name">
@@ -1017,19 +1040,6 @@ export function Wizard({
                   </button>
                 ))}
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="block text-sm text-stone-300" htmlFor="player-name">
-                Your name <span className="text-stone-600">(so the party knows whose this is)</span>
-              </label>
-              <input
-                id="player-name"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Optional"
-                className="w-full max-w-sm rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-stone-600 outline-none focus:border-amber-500"
-              />
             </div>
 
             {campaigns.length > 0 && (

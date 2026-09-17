@@ -4,7 +4,6 @@ import { signedIn } from '@/lib/guard'
 import { partyPassword } from '@/lib/session'
 import { listCampaigns, listCharacters } from '@/lib/store'
 import { CampaignBar } from '@/components/CampaignBar'
-import { ResetEverything } from '@/components/ResetEverything'
 import { computeSheet, formatModifier } from '@/lib/character'
 import { DEFAULT_LEVEL } from '@/lib/config'
 
@@ -139,11 +138,10 @@ async function PartyList() {
         ))
       )}
 
-      <footer className="flex flex-wrap items-center gap-4 border-t border-white/5 pt-4">
+      <footer className="border-t border-white/5 pt-4">
         <Link href="/console" className="text-xs text-stone-600 hover:text-stone-400">
           API console — send raw requests and see what the API returns
         </Link>
-        <ResetEverything characterCount={characters.length} campaignCount={campaigns.length} />
       </footer>
     </div>
   )
