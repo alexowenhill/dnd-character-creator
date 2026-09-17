@@ -1,77 +1,88 @@
-# Bug report: `POST /api/characters` rejects every request with `Bad Request`
+# Notes for the D&D Yonder API author
 
-A draft to send to the author of the D&D Yonder API (contact address is on the
-docs page at https://dndapi.ashleysheridan.co.uk/). Fill in the bracketed bits
-and paste the diagnosis output from the app's `/console` page underneath.
+Findings from building a character creator against the API, with the source at
+https://github.com/AshleyJSheridan/dnd-game-api. Contact address is on the docs
+page at https://dndapi.ashleysheridan.co.uk/.
+
+The first item is a documentation mismatch that makes character creation look
+completely broken from the outside. The other two are small rules bugs.
 
 ---
 
-**Subject:** `POST /api/characters` returns `{"error":"Bad Request"}` for every request body
+**Subject:** Docs give the wrong field names for `POST /api/characters`, plus two rules bugs
 
 Hello,
 
-I've been building a small character-creator front end against the API and have
-hit a wall on character creation. Everything else works — registering, logging
-in, `GET /api/user`, races, classes, backgrounds, languages, the name generator
-and dice rolling all behave exactly as documented. Only creating a character
-fails.
+Thank you for publishing the source — it answered a problem I had spent a long
+time on, and turned up two other things while I was in there.
 
-**What happens**
+## 1. `POST /api/characters` — documented field names do not match the code
 
-`POST /api/characters` responds `400` with `{"error":"Bad Request"}` regardless
-of what I send. I tried, with a valid bearer token on every request:
+The documentation gives the create body as:
 
-| Request | Response |
-| --- | --- |
-| `{"name":"Test","level":1}` as JSON | `400 {"error":"Bad Request"}` |
-| `name=Test&level=1` as form data | `400 {"error":"Bad Request"}` |
-| `{"name":"Test"}` (no level) | `400 {"error":"Bad Request"}` |
-| `{"name":"Test","level":"1"}` (level as string) | `400 {"error":"Bad Request"}` |
-| a name with no spaces | `400 {"error":"Bad Request"}` |
-| `{}` (empty body) | `400 {"error":"Bad Request"}` |
-| `{"wibble":true}` (nonsense body) | `400 {"error":"Bad Request"}` |
-| parameters in the query string instead | `400 {"error":"Bad Request"}` |
+```json
+{"name": "Some heroic name", "level": 1}
+```
 
-An empty body and a nonsense body producing exactly the same error as a
-well-formed one suggests the handler is failing before it validates the input,
-rather than objecting to a particular field.
+`CharactersController::createCharacter` reads `charName` and `charLevel`:
 
-`GET /api/characters` returns `[]` throughout, so nothing is being created.
+```php
+'name' => $jsonData->charName,
+'level' => $jsonData->charLevel,
+```
 
-**Things I ruled out**
+Anything else throws inside the `try`, and the `catch` returns
+`{"error": "Bad Request"}` with a 400. Because that catch swallows every
+exception into one generic message, the response is identical for a missing
+field, a malformed body and an empty body — so from outside it looks like the
+route is rejecting everything before it reads anything, rather than objecting to
+a field name.
 
-- **The token.** `GET /api/user` returns my user record with the same token, and
-  the reference endpoints all work with it.
-- **POST in general.** `POST /api/game/dice` with the same token and a JSON body
-  works and returns rolls, so the method, the token and the JSON handling are all
-  fine elsewhere.
-- **The route.** `POST /api/character` (singular) returns Laravel's normal
-  `{"message":"The route api/character could not be found."}`, so the plural
-  route exists and the `Bad Request` is coming from its own handler.
-- **My client.** I verified the outgoing request against an echo server: it
-  leaves as `POST /api/characters` with `Content-Type: application/json`,
-  `Accept: application/json`, the `Authorization: Bearer …` header, and an
-  intact 35-byte body.
+I tried eleven variations — both encodings, with and without `level`, an empty
+body, a nonsense body, query parameters — and all returned exactly the same
+error, which is what sent me looking at the source in the end.
 
-**One documentation note, separately**
+Two suggestions, either of which would have saved the confusion:
 
-The docs give the create route as `POST /api/characters/` with a trailing slash,
-but that URL answers `301` to `/api/characters`. That matters more than it might
-seem: per the fetch spec a 301 answering a POST is retried as a **GET with the
-body dropped**, so a browser client following the documented URL silently ends
-up reading the characters list instead of creating anything — it looks like a
-create that succeeded and returned `[]`. Might be worth either dropping the
-slash from the docs or answering with a `307`/`308`, which preserve the method
-and body.
+- Update the docs to `charName` / `charLevel` (or accept `name` / `level` too).
+- Include the exception message in the error response, at least in a non-production
+  environment: `['error' => 'Bad Request', 'detail' => $e->getMessage()]`.
 
-Thanks for building and hosting this — the rest of it has been a pleasure to
-work against.
+## 2. Hit points do not include the Constitution modifier
+
+`CharacterResource::getHitPoints()`:
+
+```php
+$hitPoints = ($this->CharacterClass->hit_points_start ?? 0) +
+    ($this->CharacterClass->hit_points_per_level ?? 0) * ($level - 1);
+```
+
+In 5e, a character adds their Constitution modifier at every level, so this
+under-reports by `CON modifier × level`. A level 5 fighter with Constitution 16
+should have 44 hit points and this returns 34.
+
+## 3. Monk unarmoured defence reads Constitution instead of Wisdom
+
+`CharacterResource::calculateArmorClass()`, in the Monk branch:
+
+```php
+$wis = $parsedAbilities->where('short_name', 'con')->first();
+$response['modifiers']['wis'] = ($wis ? $wis->modifier : 0) + ...
+```
+
+The variable is named `$wis` but the lookup is `'con'` — the Barbarian branch
+directly above uses `'con'` legitimately, so it looks like a copy-paste. Monk
+unarmoured defence should be 10 + DEX + WIS.
+
+## A smaller note
+
+`PATCH /characters/{guid}` with `updateType: "race"` only applies when
+`race_id === 0`, so a race cannot be changed once set. That may well be
+deliberate, but it succeeds silently rather than saying so, which makes it look
+like the update was applied.
+
+Thanks again for building and hosting this — the name generator in particular is
+lovely, and the breadth of what is in there now (campaigns, encounters,
+inventory, lore) is impressive.
 
 [your name]
-
----
-
-## Full transcript
-
-[Paste the output of "Run diagnosis" → "Copy all as text" from the app's
-`/console` page here. It contains every request and response verbatim.]

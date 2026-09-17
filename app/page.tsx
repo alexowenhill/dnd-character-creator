@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { Gate } from '@/components/Gate'
 import { signedIn } from '@/lib/guard'
 import { partyPassword } from '@/lib/session'
-import { listCharacters } from '@/lib/store'
+import { listCampaigns, listCharacters } from '@/lib/store'
+import { CampaignBar } from '@/components/CampaignBar'
 import { computeSheet, formatModifier } from '@/lib/character'
 import { DEFAULT_LEVEL } from '@/lib/config'
 
@@ -32,24 +33,63 @@ export default async function HomePage() {
 }
 
 async function PartyList() {
-  const characters = await listCharacters()
+  const [characters, campaigns] = await Promise.all([listCharacters(), listCampaigns()])
+
+  // Group by campaign, with anything unassigned last.
+  const groups = [
+    ...campaigns.map((campaign) => ({
+      key: campaign.id,
+      name: campaign.name,
+      href: `/campaign/${campaign.id}`,
+      members: characters.filter((character) => character.campaignId === campaign.id),
+    })),
+    {
+      key: 'none',
+      name: campaigns.length ? 'Not in a campaign' : '',
+      href: null,
+      members: characters.filter(
+        (character) => !character.campaignId || !campaigns.some((c) => c.id === character.campaignId),
+      ),
+    },
+  ].filter((group) => group.members.length > 0 || group.key !== 'none')
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/create"
-        className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-medium text-stone-950 transition-colors hover:bg-amber-500"
-      >
-        Make a character
-      </Link>
+      <div className="flex flex-wrap items-center gap-4">
+        <Link
+          href="/create"
+          className="inline-flex items-center justify-center rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-medium text-stone-950 transition-colors hover:bg-amber-500"
+        >
+          Make a character
+        </Link>
+        <CampaignBar hasCampaigns={campaigns.length > 0} />
+      </div>
 
-      {characters.length === 0 ? (
+      {characters.length === 0 && campaigns.length === 0 ? (
         <p className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-stone-400">
           Nobody has made a character yet. Be the first.
         </p>
       ) : (
+        // Campaign headings show even before anyone has joined them, so a
+        // campaign created first is not invisible.
+        groups.map((group) => (
+        <div key={group.key} className="space-y-3">
+          {group.name && (
+            <h2 className="text-xs font-medium uppercase tracking-wider text-stone-500">
+              {group.href ? (
+                <Link href={group.href} className="hover:text-stone-300">
+                  {group.name} →
+                </Link>
+              ) : (
+                group.name
+              )}
+            </h2>
+          )}
+          {group.members.length === 0 ? (
+            <p className="text-sm text-stone-600">No characters yet.</p>
+          ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {characters.map((character) => {
+          {group.members.map((character) => {
             const sheet = computeSheet(character)
             return (
               <Link
@@ -84,6 +124,9 @@ async function PartyList() {
             )
           })}
         </div>
+          )}
+        </div>
+        ))
       )}
     </div>
   )

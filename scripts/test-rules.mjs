@@ -179,6 +179,70 @@ check('martial answers suggest a martial class', ['fighter', 'barbarian', 'palad
 const casterAnswers = { trouble: 'magic', origin: 'temple', drive: 'curiosity', 'party-role': 'knowledge', temperament: 'remember', body: 'clever', 'magic-feel': 'study' }
 check('study answers suggest wizard', scoreQuiz(casterAnswers).classes[0].id === 'wizard', scoreQuiz(casterAnswers).classes[0].id)
 
+// --- armour class from equipment ------------------------------------
+// Light armour adds full DEX.
+const studded = computeSheet(make({
+  classId: 'rogue', subclassId: 'thief', backgroundId: 'criminal',
+  baseAbilities: base({ dex: 18 }),
+  equipment: { armourId: 'studded', weaponIds: ['rapier'] },
+}))
+check('studded leather + full DEX = 12 + 4 = 16', studded.armourClass === 16, String(studded.armourClass))
+
+// Medium armour caps DEX at +2.
+const halfPlate = computeSheet(make({
+  baseAbilities: base({ dex: 18 }),
+  equipment: { armourId: 'half-plate' },
+}))
+check('half plate caps DEX at 2: 15 + 2 = 17', halfPlate.armourClass === 17, String(halfPlate.armourClass))
+
+// Heavy armour ignores DEX entirely.
+const plate = computeSheet(make({
+  baseAbilities: base({ dex: 18 }),
+  equipment: { armourId: 'plate' },
+}))
+check('plate ignores DEX = 18', plate.armourClass === 18, String(plate.armourClass))
+check('plate + shield = 20', computeSheet(make({
+  baseAbilities: base({ dex: 18 }), equipment: { armourId: 'plate', shield: true },
+})).armourClass === 20)
+
+// Strength requirement is flagged, not silently ignored.
+const heavyWarn = computeSheet(make({
+  baseAbilities: base({ str: 8 }), equipment: { armourId: 'plate' },
+}))
+check('plate warns below STR 15', Boolean(heavyWarn.armourWarning), String(heavyWarn.armourWarning))
+check('no warning when strong enough', !computeSheet(make({
+  baseAbilities: base({ str: 16 }), equipment: { armourId: 'plate' },
+})).armourWarning)
+
+// Unarmoured monk keeps its own rule even with equipment chosen.
+const monkEquipped = computeSheet(make({
+  classId: 'monk', subclassId: 'openHand',
+  baseAbilities: base({ dex: 16, wis: 14 }),
+  equipment: { weaponIds: ['shortsword'] },
+}))
+check('monk unarmoured with a weapon = 10+3+2 = 15', monkEquipped.armourClass === 15, String(monkEquipped.armourClass))
+
+// With no equipment at all, fall back to the class assumption.
+check('no equipment falls back to the class kit', fighter.armourClass === 18)
+check('fallback says it is an assumption', fighter.armourNote.startsWith('Assumed'), fighter.armourNote)
+
+// --- attacks ---------------------------------------------------------
+const rapierAttack = studded.attacks.find((a) => a.name === 'Rapier')
+check('rapier is a listed attack', Boolean(rapierAttack))
+// Finesse with DEX 18 (+4) and proficiency +3.
+check('rapier attack = +7', rapierAttack.attackBonus === 7, String(rapierAttack.attackBonus))
+check('rapier damage includes the modifier', rapierAttack.damage === '1d8 +4', rapierAttack.damage)
+check('rogue is proficient with a rapier', rapierAttack.proficient)
+// A wizard with a greatsword is not proficient.
+const wizWeapon = computeSheet(make({
+  classId: 'wizard', subclassId: 'evocation', backgroundId: 'sage',
+  baseAbilities: base({ str: 10 }),
+  equipment: { weaponIds: ['greatsword'] },
+}))
+check('wizard not proficient with a greatsword', wizWeapon.attacks[0].proficient === false)
+check('non-proficient attack gets no bonus', wizWeapon.attacks[0].attackBonus === 0, String(wizWeapon.attacks[0].attackBonus))
+check('no weapons means no attacks', fighter.attacks.length === 0)
+
 // --- session signing -------------------------------------------------
 const token = makeSessionToken()
 check('fresh token validates', isValidSessionToken(token))

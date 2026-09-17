@@ -5,6 +5,7 @@ import { listCharacters, saveCharacter } from '@/lib/store'
 import { computeSheet, type StoredCharacter } from '@/lib/character'
 import { ABILITY_ORDER, classById, raceById, backgroundById, SKILL_KEYS } from '@/lib/srd'
 import type { AbilityKey, SkillKey } from '@/lib/srd'
+import { ARMOURS, WEAPONS, type StoredEquipment } from '@/lib/equipment'
 
 export async function GET() {
   const denied = await requireSession()
@@ -84,6 +85,30 @@ function validate(body: unknown): { ok: true; character: StoredCharacter } | { o
     return { ok: false, error: `At level ${level} you have ${allowed} points to spend.` }
   }
 
+  // Equipment must name real armour and weapons, since armour class comes off it.
+  const rawEquipment = (input.equipment ?? {}) as Record<string, unknown>
+  const armourId = typeof rawEquipment.armourId === 'string' ? rawEquipment.armourId : undefined
+  if (armourId && !ARMOURS.some((entry) => entry.id === armourId)) {
+    return { ok: false, error: 'That is not a piece of armour.' }
+  }
+  const weaponIds = Array.isArray(rawEquipment.weaponIds)
+    ? rawEquipment.weaponIds.filter(
+        (entry): entry is string =>
+          typeof entry === 'string' && WEAPONS.some((weapon) => weapon.id === entry),
+      )
+    : []
+  const equipment: StoredEquipment = {
+    armourId,
+    shield: rawEquipment.shield === true,
+    weaponIds,
+    extras: Array.isArray(rawEquipment.extras)
+      ? rawEquipment.extras
+          .filter((entry): entry is string => typeof entry === 'string')
+          .map((entry) => entry.slice(0, 80))
+          .slice(0, 30)
+      : [],
+  }
+
   const strings = (value: unknown) =>
     Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string').slice(0, 40) : []
 
@@ -93,6 +118,7 @@ function validate(body: unknown): { ok: true; character: StoredCharacter } | { o
       id: randomUUID(),
       name,
       playerName,
+      campaignId: typeof input.campaignId === 'string' && input.campaignId ? input.campaignId : undefined,
       level,
       raceId: race.id,
       subraceId,
@@ -104,6 +130,7 @@ function validate(body: unknown): { ok: true; character: StoredCharacter } | { o
       rolls: (input.rolls as StoredCharacter['rolls']) ?? undefined,
       improvements,
       skillChoices,
+      equipment,
       spells: strings(input.spells),
       cantrips: strings(input.cantrips),
       notes: typeof input.notes === 'string' ? input.notes.slice(0, 2000) : undefined,

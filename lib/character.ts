@@ -22,12 +22,22 @@ import {
   type AbilityKey,
   type SkillKey,
 } from './srd.ts'
+import {
+  SHIELD_BONUS,
+  armourById,
+  attackAbility,
+  dexAllowance,
+  weaponById,
+  type StoredEquipment,
+} from './equipment.ts'
 
 export type StoredCharacter = {
   id: string
   name: string
   level: number
   playerName: string
+  /** Which campaign this character belongs to, if any. */
+  campaignId?: string
   raceId: string
   subraceId?: string
   classId: string
@@ -41,6 +51,7 @@ export type StoredCharacter = {
   /** The level-4 ability score improvement, as +1/+2 per ability. */
   improvements?: Partial<Record<AbilityKey, number>>
   skillChoices: SkillKey[]
+  equipment?: StoredEquipment
   spells?: string[]
   cantrips?: string[]
   notes?: string
@@ -97,6 +108,17 @@ export type ComputedSheet = {
     /** Wizards only: how many spells the spellbook holds. */
     spellbook?: number
   }
+  attacks: {
+    name: string
+    attackBonus: number
+    damage: string
+    damageType: string
+    ability: AbilityKey
+    proficient: boolean
+    note?: string
+  }[]
+  /** Set when the armour worn is heavier than the class can use. */
+  armourWarning?: string
   features: string[]
   traits: string[]
 }
@@ -169,11 +191,38 @@ export function computeSheet(character: StoredCharacter): ComputedSheet {
   const hillDwarfBonus = character.subraceId === 'hill' && character.raceId === 'dwarf' ? level : 0
   const hitPoints = hitDie + conMod + (level - 1) * (averagePerLevel + conMod) + hillDwarfBonus
 
-  // Armour class from the class's assumed kit.
+  // Armour class comes from what is actually worn once equipment is chosen.
+  // Until then, fall back to the kit the class would typically carry.
+  const equipment = character.equipment
+  const wornArmour = armourById(equipment?.armourId)
+  const hasShield = equipment?.shield === true
   const defense = charClass?.defense
-  let armourClass = 10 + dexMod
-  let armourNote = 'Unarmoured'
-  if (defense) {
+  let armourClass: number
+  let armourNote: string
+  let armourWarning: string | undefined
+
+  if (equipment && (wornArmour || hasShield || equipment.weaponIds?.length)) {
+    if (wornArmour) {
+      armourClass =
+        wornArmour.baseAc + dexAllowance(wornArmour.category, dexMod) + (hasShield ? SHIELD_BONUS : 0)
+      const dexPart = dexAllowance(wornArmour.category, dexMod)
+      armourNote =
+        `${wornArmour.name}${hasShield ? ' and shield' : ''}` +
+        ` (${wornArmour.baseAc}${dexPart ? ` + ${dexPart} DEX` : ''}${hasShield ? ` + ${SHIELD_BONUS}` : ''})`
+      if (wornArmour.strengthMin && abilityByKey.str.total < wornArmour.strengthMin) {
+        armourWarning = `${wornArmour.name} needs Strength ${wornArmour.strengthMin} — you move 10 ft slower without it.`
+      }
+    } else {
+      // Unarmoured: monks and barbarians have their own better rule.
+      const unarmouredBonus =
+        charClass?.defense.addWis ? abilityByKey.wis.modifier : charClass?.defense.addCon ? conMod : 0
+      armourClass = 10 + dexMod + unarmouredBonus + (hasShield ? SHIELD_BONUS : 0)
+      armourNote =
+        unarmouredBonus > 0
+          ? `Unarmoured Defence (10 + ${dexMod} DEX + ${unarmouredBonus})`
+          : `No armour (10 + ${dexMod} DEX)${hasShield ? ` + ${SHIELD_BONUS} shield` : ''}`
+    }
+  } else if (defense) {
     const dexPart = defense.dexCap === 0 ? 0 : Math.min(dexMod, defense.dexCap ?? 99)
     armourClass =
       defense.base +
@@ -181,7 +230,10 @@ export function computeSheet(character: StoredCharacter): ComputedSheet {
       (defense.addWis ? abilityByKey.wis.modifier : 0) +
       (defense.addCon ? conMod : 0) +
       (defense.shield ? 2 : 0)
-    armourNote = defense.label
+    armourNote = `Assumed: ${defense.label}`
+  } else {
+    armourClass = 10 + dexMod
+    armourNote = 'Unarmoured'
   }
 
   const savingThrows = ABILITY_ORDER.map((key) => {
@@ -237,8 +289,33 @@ export function computeSheet(character: StoredCharacter): ComputedSheet {
   if (charClass?.id === 'monk' && level >= 2) speed += 10
   if (charClass?.id === 'barbarian' && level >= 5) speed += 10
 
+  // Weapon attacks, so the sheet is usable in a fight.
+  const attacks = (character.equipment?.weaponIds ?? [])
+    .map((id) => weaponById(id))
+    .filter((weapon): weapon is NonNullable<typeof weapon> => Boolean(weapon))
+    .map((weapon) => {
+      const ability = attackAbility(weapon, abilityByKey.str.total, abilityByKey.dex.total)
+      const abilityMod = abilityByKey[ability].modifier
+      // Proficiency covers simple weapons for everyone, martial for the classes
+      // trained in them; the SRD exceptions are close enough not to mislead.
+      const martialClasses = ['barbarian', 'fighter', 'paladin', 'ranger', 'rogue', 'bard', 'monk']
+      const proficient =
+        weapon.kind === 'simple' || martialClasses.includes(charClass?.id ?? '')
+      return {
+        name: weapon.name,
+        attackBonus: abilityMod + (proficient ? profBonus : 0),
+        damage: `${weapon.damage}${abilityMod ? ` ${abilityMod > 0 ? '+' : ''}${abilityMod}` : ''}`,
+        damageType: weapon.damageType,
+        ability,
+        proficient,
+        note: weapon.versatile ? `${weapon.versatile} two-handed` : undefined,
+      }
+    })
+
   return {
     character,
+    attacks,
+    armourWarning,
     raceName: subrace ? `${subrace.name}` : (race?.name ?? 'Unknown'),
     className: charClass?.name ?? 'Unknown',
     subclassName:

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Wizard } from './Wizard'
 import { signedIn } from '@/lib/guard'
+import { listCampaigns } from '@/lib/store'
 import { DEFAULT_LEVEL } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,11 @@ export const metadata = {
 
 export default async function CreatePage() {
   if (!(await signedIn())) redirect('/')
+
+  const campaigns = (await listCampaigns()).map((campaign) => ({
+    id: campaign.id,
+    name: campaign.name,
+  }))
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 space-y-6">
@@ -25,7 +31,7 @@ export default async function CreatePage() {
         </p>
       </header>
 
-      <Wizard defaultLevel={DEFAULT_LEVEL} />
+      <Wizard defaultLevel={DEFAULT_LEVEL} campaigns={campaigns} />
     </main>
   )
 }

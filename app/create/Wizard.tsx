@@ -19,11 +19,17 @@ import {
   type SkillKey,
 } from '@/lib/srd'
 import { computeSheet, suggestAssignment, type StoredCharacter } from '@/lib/character'
+import {
+  ARMOURS,
+  STARTER_KITS,
+  WEAPONS,
+  type StoredEquipment,
+} from '@/lib/equipment'
 
 type Roll = { dice: number[]; total: number; guid?: string }
 
 const STEPS = [
-  'quiz', 'race', 'class', 'background', 'alignment', 'abilities', 'skills', 'spells', 'name',
+  'quiz', 'race', 'class', 'background', 'alignment', 'abilities', 'skills', 'equipment', 'spells', 'name',
 ] as const
 type Step = (typeof STEPS)[number]
 
@@ -35,6 +41,7 @@ const STEP_LABELS: Record<Step, string> = {
   alignment: 'Outlook',
   abilities: 'Abilities',
   skills: 'Skills',
+  equipment: 'Equipment',
   spells: 'Spells',
   name: 'Name',
 }
@@ -99,7 +106,13 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
  * Wizard
  * ------------------------------------------------------------------ */
 
-export function Wizard({ defaultLevel }: { defaultLevel: number }) {
+export function Wizard({
+  defaultLevel,
+  campaigns,
+}: {
+  defaultLevel: number
+  campaigns: { id: string; name: string }[]
+}) {
   const router = useRouter()
   const [step, setStep] = useState<Step>('quiz')
   const [error, setError] = useState('')
@@ -121,12 +134,14 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
   const [improvements, setImprovements] = useState<Partial<Record<AbilityKey, number>>>({})
 
   const [skillChoices, setSkillChoices] = useState<SkillKey[]>([])
+  const [equipment, setEquipment] = useState<StoredEquipment>({})
   const [cantrips, setCantrips] = useState<string[]>([])
   const [spells, setSpells] = useState<string[]>([])
   const [spellOptions, setSpellOptions] = useState<{ cantrips: string[]; leveled: string[] } | null>(null)
 
   const [name, setName] = useState('')
   const [playerName, setPlayerName] = useState('')
+  const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '')
   const [suggestions, setSuggestions] = useState<string[]>([])
 
   const result = useMemo(() => scoreQuiz(quizAnswers), [quizAnswers])
@@ -260,6 +275,7 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
       id: 'preview',
       name: name || 'Unnamed',
       playerName,
+      campaignId: campaignId || undefined,
       level,
       raceId,
       subraceId: subraceId || undefined,
@@ -276,12 +292,13 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
       ) as Record<AbilityKey, number[]>,
       improvements,
       skillChoices,
+      equipment,
       cantrips,
       spells,
       createdAt: new Date().toISOString(),
     }),
-    [name, playerName, level, raceId, subraceId, classId, subclassId, backgroundId, alignmentId,
-      baseAbilities, assignment, rolls, improvements, skillChoices, cantrips, spells],
+    [name, playerName, campaignId, level, raceId, subraceId, classId, subclassId, backgroundId, alignmentId,
+      baseAbilities, assignment, rolls, improvements, skillChoices, equipment, cantrips, spells],
   )
 
   const save = async () => {
@@ -313,6 +330,7 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
       case 'alignment': return Boolean(alignmentId)
       case 'abilities': return abilitiesAssigned && improvementSpent === improvementBudget
       case 'skills': return skillChoices.length === (charClass?.skillChoices ?? 0)
+      case 'equipment': return true
       case 'spells': return true
       case 'name': return name.trim().length > 0
       default: return true
@@ -434,6 +452,10 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
                   setClassId(entry.id)
                   setSubclassId(entry.subclasses[0]?.id ?? '')
                   setSkillChoices([])
+                  // Start them off with the class's usual kit; the equipment
+                  // step lets them change any of it.
+                  const kit = STARTER_KITS[entry.id]
+                  setEquipment(kit ? { ...kit } : {})
                 }}
               />
             ))}
@@ -647,6 +669,125 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
         </Panel>
       )}
 
+      {step === 'equipment' && charClass && (
+        <Panel
+          title="Gear up"
+          hint={`Started you off with what a ${charClass.name} usually carries. Change anything — your armour class updates as you do.`}
+        >
+          <div className="space-y-6">
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-sm text-stone-300">
+                Armour class{' '}
+                <span className="text-lg font-semibold text-stone-100">
+                  {computeSheet(draft).armourClass}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-stone-500">{computeSheet(draft).armourNote}</p>
+              {computeSheet(draft).armourWarning && (
+                <p className="mt-1 text-xs text-amber-300">{computeSheet(draft).armourWarning}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-stone-300">Armour</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setEquipment((prev) => ({ ...prev, armourId: undefined }))}
+                  className={`rounded-xl border px-3 py-2 text-left text-sm cursor-pointer ${
+                    !equipment.armourId
+                      ? 'border-amber-500 bg-amber-600/20 text-stone-100'
+                      : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                  }`}
+                >
+                  No armour
+                  <span className="ml-2 text-xs text-stone-500">10 + DEX</span>
+                </button>
+                {ARMOURS.map((armour) => (
+                  <button
+                    key={armour.id}
+                    type="button"
+                    onClick={() => setEquipment((prev) => ({ ...prev, armourId: armour.id }))}
+                    className={`rounded-xl border px-3 py-2 text-left text-sm cursor-pointer ${
+                      equipment.armourId === armour.id
+                        ? 'border-amber-500 bg-amber-600/20 text-stone-100'
+                        : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {armour.name}
+                    <span className="ml-2 text-xs text-stone-500">
+                      AC {armour.baseAc}
+                      {armour.category === 'light' ? ' + DEX' : armour.category === 'medium' ? ' + DEX (max 2)' : ''}
+                      {' · '}{armour.cost}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-2 pt-1 text-sm text-stone-300">
+                <input
+                  type="checkbox"
+                  checked={equipment.shield === true}
+                  onChange={(e) => setEquipment((prev) => ({ ...prev, shield: e.target.checked }))}
+                  className="h-4 w-4 accent-amber-600"
+                />
+                Carrying a shield (+2)
+              </label>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-stone-300">Weapons</h3>
+              <div className="flex flex-wrap gap-1.5">
+                {WEAPONS.map((weapon) => {
+                  const chosen = equipment.weaponIds?.includes(weapon.id) ?? false
+                  return (
+                    <button
+                      key={weapon.id}
+                      type="button"
+                      onClick={() =>
+                        setEquipment((prev) => {
+                          const current = prev.weaponIds ?? []
+                          return {
+                            ...prev,
+                            weaponIds: current.includes(weapon.id)
+                              ? current.filter((id) => id !== weapon.id)
+                              : [...current, weapon.id],
+                          }
+                        })
+                      }
+                      title={`${weapon.damage} ${weapon.damageType}`}
+                      className={`rounded-full border px-3 py-1 text-xs cursor-pointer ${
+                        chosen
+                          ? 'border-amber-500 bg-amber-600/20 text-stone-100'
+                          : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {weapon.name}
+                      <span className="ml-1.5 text-stone-500">{weapon.damage}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {equipment.extras?.length ? (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-stone-300">Also carrying</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {equipment.extras.map((item) => (
+                    <span
+                      key={item}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-stone-400"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </Panel>
+      )}
+
       {step === 'spells' && charClass && (
         <Panel
           title="Spells"
@@ -743,6 +884,27 @@ export function Wizard({ defaultLevel }: { defaultLevel: number }) {
                 className="w-full max-w-sm rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white placeholder-stone-600 outline-none focus:border-amber-500"
               />
             </div>
+
+            {campaigns.length > 0 && (
+              <div className="space-y-2">
+                <label className="block text-sm text-stone-300" htmlFor="campaign">
+                  Campaign
+                </label>
+                <select
+                  id="campaign"
+                  value={campaignId}
+                  onChange={(e) => setCampaignId(e.target.value)}
+                  className="w-full max-w-sm rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-stone-200 outline-none focus:border-amber-500 cursor-pointer"
+                >
+                  <option value="">Not in a campaign</option>
+                  {campaigns.map((campaign) => (
+                    <option key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {name && classId && raceId && (
               <div className="rounded-xl border border-white/10 bg-black/20 p-5">

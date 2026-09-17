@@ -17,8 +17,18 @@ No rules knowledge needed, and nothing to install.
 4. Roll your abilities — six sets of 4d6 keeping the best three. The app
    arranges them sensibly for the class you chose; drag them around if you'd
    rather.
-5. Pick your skills, and your spells if you cast.
+5. Pick your skills, your gear, and your spells if you cast.
 6. Name them, and you are done. The sheet has everything you need to play.
+
+## Campaigns
+
+Characters can belong to a campaign, which groups them on the party page and
+gives the group a shared page for lore, session recaps and house rules.
+
+These are kept here rather than using the API's campaigns: those are tied to
+Yonder user accounts and their invites are addressed to Yonder users, but
+everyone on this site shares one account, so there is nobody for an invite to
+reach.
 
 ## What the sheet works out
 
@@ -28,6 +38,9 @@ No rules knowledge needed, and nothing to install.
 - Passive perception
 - For casters: spell save DC, spell attack bonus, spell slots per level, how
   many cantrips and spells to prepare or know
+- Armour class from the armour actually worn, with the dexterity cap that
+  medium and heavy armour impose
+- A table of weapon attacks with attack bonus, damage and proficiency
 - Class features and racial traits at your level
 - The actual dice that produced each ability score
 
@@ -64,27 +77,38 @@ npm test
 Covers the rules maths against worked examples — hit points for several
 class and constitution combinations, unarmoured AC for monks and barbarians,
 saving throws, skill proficiencies from both background and class, spell slots
-for full, half and pact casters, ability caps — plus the quiz scoring and the
-session cookie signing, including that a tampered cookie is rejected.
+for full, half and pact casters, ability caps, armour class across light,
+medium and heavy armour, and weapon attack bonuses with and without
+proficiency — plus the quiz scoring and the session cookie signing, including
+that a tampered cookie is rejected.
 
 ## About the D&D Yonder API
 
 This started as a front end for the
-[D&D Yonder API](https://dndapi.ashleysheridan.co.uk/). Its character storage
-turned out to be broken: `POST /api/characters` rejects every request with
-`{"error":"Bad Request"}`, including an empty body, so nothing can be saved
-there. `docs/api-bug-report.md` has the full investigation, ready to send.
+[D&D Yonder API](https://dndapi.ashleysheridan.co.uk/), whose source is at
+[AshleyJSheridan/dnd-game-api](https://github.com/AshleyJSheridan/dnd-game-api).
 
-So the rules live in `lib/srd.ts` and characters are stored by this app. The API
-is still used where it is good and where a failure costs nothing:
+`POST /api/characters` rejects everything with `{"error":"Bad Request"}` — not
+because it is broken, but because the published docs give the wrong field names.
+The controller reads `charName` and `charLevel`; the docs say `name` and
+`level`. A generic `catch` turns every mismatch into the same message, so from
+outside it looks like a dead route. `docs/api-bug-report.md` writes that up,
+along with two rules bugs in their code (hit points omit the Constitution
+modifier, and Monk unarmoured defence reads Constitution where it means Wisdom).
+
+Characters are still stored here rather than there. That keeps the sheet correct
+where their maths is not, and means a slow or unavailable API never blocks
+anyone mid-session. The API is used where it is good and where a failure costs
+nothing:
 
 - **Dice.** Ability rolls go through `POST /api/game/dice`, which stores each
   roll server-side against a guid — harder to quietly re-roll than something
   done in the browser. Falls back to the platform CSPRNG.
 - **Names.** The Markov-chain name generator, per race.
 - **Spells.** The spell index, filtered by class and level.
+- **Items.** The catalogue, for browsing gear beyond the starter kit.
 
-All three degrade to something sensible if the API is slow, down, or
+All four degrade to something sensible if the API is slow, down, or
 unconfigured. Leave `YONDER_EMAIL` and `YONDER_PASSWORD` unset and the app works
 fine without it.
 
@@ -102,4 +126,5 @@ stays on the server.
 - Each class has its SRD subclass. If your DM allows others, pick the closest
   and note the real one.
 - Ability scores are rolled, 4d6 drop lowest. There is no point buy.
-- Equipment, feats and multiclassing are not covered.
+- Starting equipment is a sensible kit per class, changeable at the equipment
+  step. Feats and multiclassing are not covered.

@@ -14,32 +14,55 @@ import { dirname, join } from 'node:path'
 import type { StoredCharacter } from './character.ts'
 
 const STORE_NAME = 'characters'
+const CAMPAIGN_STORE = 'campaigns'
 const LOCAL_PATH = join(process.cwd(), '.data', 'characters.json')
+const LOCAL_CAMPAIGN_PATH = join(process.cwd(), '.data', 'campaigns.json')
 
 type Bag = Record<string, StoredCharacter>
+
+/**
+ * A campaign groups the party and holds shared notes.
+ *
+ * Kept local rather than using the API's campaigns: those are tied to Yonder
+ * user accounts and their invites go to Yonder users, but everyone here shares
+ * one account, so invites have nobody to address.
+ */
+export type Campaign = {
+  id: string
+  name: string
+  blurb?: string
+  /** Shared lore, session notes, house rules — newest first. */
+  notes: { id: string; title: string; body: string; author: string; createdAt: string }[]
+  createdAt: string
+}
+
+type CampaignBag = Record<string, Campaign>
 
 /** Netlify sets these; their absence is how we detect local development. */
 function onNetlify(): boolean {
   return Boolean(process.env.NETLIFY || process.env.NETLIFY_BLOBS_CONTEXT)
 }
 
-async function readLocal(): Promise<Bag> {
+async function readLocalFile<T>(path: string): Promise<T> {
   try {
-    return JSON.parse(await readFile(LOCAL_PATH, 'utf8')) as Bag
+    return JSON.parse(await readFile(path, 'utf8')) as T
   } catch {
     // No file yet, or unreadable — start empty rather than failing the request.
-    return {}
+    return {} as T
   }
 }
 
-async function writeLocal(bag: Bag): Promise<void> {
-  await mkdir(dirname(LOCAL_PATH), { recursive: true })
-  await writeFile(LOCAL_PATH, JSON.stringify(bag, null, 2))
+async function writeLocalFile(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, JSON.stringify(value, null, 2))
 }
 
-async function blobStore() {
+const readLocal = () => readLocalFile<Bag>(LOCAL_PATH)
+const writeLocal = (bag: Bag) => writeLocalFile(LOCAL_PATH, bag)
+
+async function blobStore(name = STORE_NAME) {
   const { getStore } = await import('@netlify/blobs')
-  return getStore(STORE_NAME)
+  return getStore(name)
 }
 
 export async function listCharacters(): Promise<StoredCharacter[]> {
@@ -89,4 +112,56 @@ export async function deleteCharacter(id: string): Promise<void> {
   const bag = await readLocal()
   delete bag[id]
   await writeLocal(bag)
+}
+
+/* ------------------------------------------------------------------ *
+ * Campaigns
+ * ------------------------------------------------------------------ */
+
+export async function listCampaigns(): Promise<Campaign[]> {
+  let campaigns: Campaign[]
+
+  if (onNetlify()) {
+    const store = await blobStore(CAMPAIGN_STORE)
+    const { blobs } = await store.list()
+    campaigns = (
+      await Promise.all(
+        blobs.map(async (blob) => (await store.get(blob.key, { type: 'json' })) as Campaign | null),
+      )
+    ).filter((entry): entry is Campaign => entry !== null)
+  } else {
+    campaigns = Object.values(await readLocalFile<CampaignBag>(LOCAL_CAMPAIGN_PATH))
+  }
+
+  return campaigns.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+}
+
+export async function getCampaign(id: string): Promise<Campaign | null> {
+  if (onNetlify()) {
+    const store = await blobStore(CAMPAIGN_STORE)
+    return ((await store.get(id, { type: 'json' })) as Campaign | null) ?? null
+  }
+  return (await readLocalFile<CampaignBag>(LOCAL_CAMPAIGN_PATH))[id] ?? null
+}
+
+export async function saveCampaign(campaign: Campaign): Promise<void> {
+  if (onNetlify()) {
+    const store = await blobStore(CAMPAIGN_STORE)
+    await store.setJSON(campaign.id, campaign)
+    return
+  }
+  const bag = await readLocalFile<CampaignBag>(LOCAL_CAMPAIGN_PATH)
+  bag[campaign.id] = campaign
+  await writeLocalFile(LOCAL_CAMPAIGN_PATH, bag)
+}
+
+export async function deleteCampaign(id: string): Promise<void> {
+  if (onNetlify()) {
+    const store = await blobStore(CAMPAIGN_STORE)
+    await store.delete(id)
+    return
+  }
+  const bag = await readLocalFile<CampaignBag>(LOCAL_CAMPAIGN_PATH)
+  delete bag[id]
+  await writeLocalFile(LOCAL_CAMPAIGN_PATH, bag)
 }

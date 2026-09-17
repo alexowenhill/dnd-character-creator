@@ -2,6 +2,7 @@
 
 import { formatModifier, type ComputedSheet } from '@/lib/character'
 import { ALIGNMENTS } from '@/lib/srd'
+import { armourById, weaponById } from '@/lib/equipment'
 
 function Box({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
@@ -84,6 +85,48 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
           </>
         )}
       </div>
+
+      {sheet.armourWarning && (
+        <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          {sheet.armourWarning}
+        </p>
+      )}
+
+      {sheet.attacks.length > 0 && (
+        <Section title="Attacks">
+          <div className="overflow-hidden rounded-xl border border-white/10">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-white/5 text-[11px] uppercase tracking-wider text-stone-500">
+                  <th className="px-3 py-2 text-left font-medium">Weapon</th>
+                  <th className="px-3 py-2 text-right font-medium">Attack</th>
+                  <th className="px-3 py-2 text-left font-medium">Damage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sheet.attacks.map((attack) => (
+                  <tr key={attack.name} className="border-t border-white/5">
+                    <td className="px-3 py-2 text-stone-200">
+                      {attack.name}
+                      {attack.note && <span className="ml-2 text-xs text-stone-500">{attack.note}</span>}
+                      {!attack.proficient && (
+                        <span className="ml-2 text-xs text-amber-400/80">not proficient</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-stone-300">
+                      {formatModifier(attack.attackBonus)}
+                    </td>
+                    <td className="px-3 py-2 text-stone-300">
+                      {attack.damage}{' '}
+                      <span className="text-xs text-stone-500">{attack.damageType}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
 
       <div className="grid gap-8 sm:grid-cols-2">
         <Section title="Saving throws">
@@ -197,6 +240,33 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
           </ul>
         </Section>
       </div>
+
+      {(c.equipment?.armourId || c.equipment?.shield || c.equipment?.weaponIds?.length || c.equipment?.extras?.length) && (
+        <Section title="Equipment">
+          <div className="flex flex-wrap gap-1.5">
+            {c.equipment.armourId && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-300">
+                {armourById(c.equipment.armourId)?.name ?? c.equipment.armourId}
+              </span>
+            )}
+            {c.equipment.shield && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-300">
+                Shield
+              </span>
+            )}
+            {c.equipment.weaponIds?.map((id) => (
+              <span key={id} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-300">
+                {weaponById(id)?.name ?? id}
+              </span>
+            ))}
+            {c.equipment.extras?.map((item) => (
+              <span key={item} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-400">
+                {item}
+              </span>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {c.rolls && (
         <Section title="The dice that made this character">
