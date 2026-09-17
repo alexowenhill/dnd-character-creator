@@ -100,35 +100,44 @@ async function PartyList() {
           {group.members.map((character) => {
             const sheet = computeSheet(character)
             return (
-              <Link
+              <div
                 key={character.id}
-                href={`/character/${character.id}`}
                 className="rounded-xl border border-white/10 bg-white/5 p-4 transition-colors hover:bg-white/10"
               >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium text-stone-100">{character.name}</span>
-                  <span className="text-xs text-stone-500">
-                    {character.playerName || '—'}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-stone-400">
-                  Level {character.level} {sheet.raceName} {sheet.className}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {sheet.abilities.map((ability) => (
-                    <span
-                      key={ability.key}
-                      className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-stone-400"
-                    >
-                      {ability.short} {ability.total}
-                      <span className="ml-1 text-stone-600">{formatModifier(ability.modifier)}</span>
+                <Link href={`/character/${character.id}`} className="block">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-medium text-stone-100">{character.name}</span>
+                    <span className="text-xs text-stone-500">
+                      {character.playerName || '—'}
                     </span>
-                  ))}
+                  </div>
+                  <p className="mt-0.5 text-xs text-stone-400">
+                    Level {character.level} {sheet.raceName} {sheet.className}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {sheet.abilities.map((ability) => (
+                      <span
+                        key={ability.key}
+                        className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-stone-400"
+                      >
+                        {ability.short} {ability.total}
+                        <span className="ml-1 text-stone-600">{formatModifier(ability.modifier)}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-stone-500">
+                    {sheet.hitPoints} HP · AC {sheet.armourClass}
+                  </p>
+                </Link>
+                <div className="mt-3 flex gap-3 border-t border-white/5 pt-2 text-[11px]">
+                  <Link href={`/create?edit=${character.id}`} className="text-stone-500 hover:text-sky-400">
+                    Edit
+                  </Link>
+                  <Link href={`/create?reset=${character.id}`} className="text-stone-500 hover:text-amber-400">
+                    Start over
+                  </Link>
                 </div>
-                <p className="mt-2 text-[11px] text-stone-500">
-                  {sheet.hitPoints} HP · AC {sheet.armourClass}
-                </p>
-              </Link>
+              </div>
             )
           })}
         </div>

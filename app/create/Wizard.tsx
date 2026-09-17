@@ -21,6 +21,7 @@ import {
 import { computeSheet, suggestAssignment, type StoredCharacter } from '@/lib/character'
 import {
   ARMOURS,
+  MAX_WEAPONS,
   STARTER_KITS,
   WEAPONS,
   type StoredEquipment,
@@ -122,43 +123,73 @@ function Panel({ title, hint, children }: { title: string; hint?: string; childr
  * Wizard
  * ------------------------------------------------------------------ */
 
+/** Rebuilds the abilities step's roll cards from a stored character, so
+ *  editing shows the scores it already has instead of demanding a re-roll. */
+function initialRolls(character: StoredCharacter): Roll[] {
+  return ABILITY_ORDER.map((key) => ({
+    dice: character.rolls?.[key] ?? [],
+    total: character.baseAbilities[key] ?? 10,
+  }))
+}
+
 export function Wizard({
   defaultLevel,
   campaigns,
+  initial,
+  mode = 'create',
 }: {
   defaultLevel: number
   campaigns: { id: string; name: string }[]
+  /** An existing character, when editing it in place or resetting it. */
+  initial?: StoredCharacter | null
+  /** 'edit' hydrates every step from `initial` and starts at the last one.
+   *  'reset' starts blank like 'create', but saves over the same character. */
+  mode?: 'create' | 'edit' | 'reset'
 }) {
   const router = useRouter()
-  const [step, setStep] = useState<Step>('quiz')
+  const editing = mode === 'edit' && Boolean(initial)
+  const editingId = mode !== 'create' ? initial?.id : undefined
+
+  const [step, setStep] = useState<Step>(editing ? 'name' : 'quiz')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({})
-  const [raceId, setRaceId] = useState('')
-  const [subraceId, setSubraceId] = useState('')
-  const [classId, setClassId] = useState('')
-  const [subclassId, setSubclassId] = useState('')
-  const [backgroundId, setBackgroundId] = useState('')
-  const [alignmentId, setAlignmentId] = useState('')
-  const [level] = useState(defaultLevel)
+  const [raceId, setRaceId] = useState(editing ? (initial?.raceId ?? '') : '')
+  const [subraceId, setSubraceId] = useState(editing ? (initial?.subraceId ?? '') : '')
+  const [classId, setClassId] = useState(editing ? (initial?.classId ?? '') : '')
+  const [subclassId, setSubclassId] = useState(editing ? (initial?.subclassId ?? '') : '')
+  const [backgroundId, setBackgroundId] = useState(editing ? (initial?.backgroundId ?? '') : '')
+  const [alignmentId, setAlignmentId] = useState(editing ? (initial?.alignmentId ?? '') : '')
+  const [level] = useState(editing ? (initial?.level ?? defaultLevel) : defaultLevel)
 
-  const [rolls, setRolls] = useState<Roll[]>([])
+  const [rolls, setRolls] = useState<Roll[]>(editing && initial ? initialRolls(initial) : [])
   const [rollSource, setRollSource] = useState<'yonder' | 'local' | null>(null)
   const [rollSourceReason, setRollSourceReason] = useState('')
   /** ability -> index into rolls */
-  const [assignment, setAssignment] = useState<Partial<Record<AbilityKey, number>>>({})
-  const [improvements, setImprovements] = useState<Partial<Record<AbilityKey, number>>>({})
+  const [assignment, setAssignment] = useState<Partial<Record<AbilityKey, number>>>(() => {
+    if (!editing) return {}
+    const map: Partial<Record<AbilityKey, number>> = {}
+    ABILITY_ORDER.forEach((key, index) => {
+      map[key] = index
+    })
+    return map
+  })
+  const [improvements, setImprovements] = useState<Partial<Record<AbilityKey, number>>>(
+    editing ? (initial?.improvements ?? {}) : {},
+  )
 
-  const [skillChoices, setSkillChoices] = useState<SkillKey[]>([])
-  const [equipment, setEquipment] = useState<StoredEquipment>({})
-  const [cantrips, setCantrips] = useState<string[]>([])
-  const [spells, setSpells] = useState<string[]>([])
+  const [skillChoices, setSkillChoices] = useState<SkillKey[]>(editing ? (initial?.skillChoices ?? []) : [])
+  const [equipment, setEquipment] = useState<StoredEquipment>(editing ? (initial?.equipment ?? {}) : {})
+  const [cantrips, setCantrips] = useState<string[]>(editing ? (initial?.cantrips ?? []) : [])
+  const [spells, setSpells] = useState<string[]>(editing ? (initial?.spells ?? []) : [])
   const [spellOptions, setSpellOptions] = useState<{ cantrips: string[]; leveled: string[] } | null>(null)
 
-  const [name, setName] = useState('')
-  const [playerName, setPlayerName] = useState('')
-  const [campaignId, setCampaignId] = useState(campaigns[0]?.id ?? '')
+  const [name, setName] = useState(editing ? (initial?.name ?? '') : '')
+  const [playerName, setPlayerName] = useState(editing ? (initial?.playerName ?? '') : '')
+  const [campaignId, setCampaignId] = useState(
+    editing ? (initial?.campaignId ?? '') : (campaigns[0]?.id ?? ''),
+  )
   const [suggestions, setSuggestions] = useState<string[]>([])
 
   const result = useMemo(() => scoreQuiz(quizAnswers), [quizAnswers])
@@ -167,8 +198,8 @@ export function Wizard({
   const isCaster = charClass ? charClass.caster !== 'none' : false
 
   const stepList = useMemo(
-    () => STEPS.filter((entry) => entry !== 'spells' || isCaster),
-    [isCaster],
+    () => STEPS.filter((entry) => (entry !== 'spells' || isCaster) && (entry !== 'quiz' || !editing)),
+    [isCaster, editing],
   )
 
   const go = useCallback(
@@ -332,18 +363,23 @@ export function Wizard({
       baseAbilities, assignment, rolls, improvements, skillChoices, equipment, cantrips, spells],
   )
 
+  /** How many cantrips and spells this class actually knows at this level — the
+   *  same numbers the sheet shows, used to stop selection there instead of at
+   *  the whole spell list. */
+  const spellLimits = useMemo(() => computeSheet(draft).spellcasting, [draft])
+
   const save = async () => {
     setBusy(true)
     setError('')
     try {
-      const res = await fetch('/api/characters', {
-        method: 'POST',
+      const res = await fetch(editingId ? `/api/characters/${editingId}` : '/api/characters', {
+        method: editingId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...draft, id: undefined }),
       })
       const data = (await res.json()) as { id?: string; error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Could not save the character.')
-      router.push(`/character/${data.id}`)
+      router.push(`/character/${data.id ?? editingId}`)
     } catch (err) {
       setError((err as Error).message)
       setBusy(false)
@@ -378,6 +414,14 @@ export function Wizard({
 
   return (
     <div className="space-y-8">
+      {mode !== 'create' && (
+        <p className="rounded-xl border border-sky-500/25 bg-sky-500/[0.06] px-4 py-2 text-sm text-sky-300">
+          {mode === 'edit'
+            ? `Editing ${initial?.name ?? 'this character'} — changes save over the existing character.`
+            : `Starting ${initial?.name ?? 'this character'} over from the beginning. Nothing is overwritten until you save.`}
+        </p>
+      )}
+
       {/* Progress */}
       <ol className="flex flex-wrap gap-1.5 text-[11px]">
         {stepList.map((entry, index) => (
@@ -404,8 +448,8 @@ export function Wizard({
 
       {step === 'quiz' && (
         <Panel
-          title="Seven questions"
-          hint="There are no wrong answers — they just point at a character that will suit you. You can override everything afterwards."
+          title="Before we set sail — seven questions"
+          hint="There are no wrong answers — they just point at a character that will suit you on this voyage. You can override everything afterwards."
         >
           <div className="space-y-4">
             {QUESTIONS.map((question, index) => {
@@ -493,6 +537,10 @@ export function Wizard({
                   setClassId(entry.id)
                   setSubclassId(entry.subclasses[0]?.id ?? '')
                   setSkillChoices([])
+                  // A different class means a different spell list — last
+                  // class's picks would not even be on it.
+                  setCantrips([])
+                  setSpells([])
                   // Start them off with the class's usual kit; the equipment
                   // step lets them change any of it.
                   const kit = STARTER_KITS[entry.id]
@@ -588,11 +636,15 @@ export function Wizard({
                     </span>
                   )
                 })}
-                <span className="text-xs text-stone-500" title={rollSourceReason || undefined}>
-                  {rollSource === 'yonder'
-                    ? 'rolled by the D&D Yonder dice API'
-                    : `rolled locally${rollSourceReason ? ` (Yonder: ${rollSourceReason})` : ''}`}
-                </span>
+                {rollSource ? (
+                  <span className="text-xs text-stone-500" title={rollSourceReason || undefined}>
+                    {rollSource === 'yonder'
+                      ? 'rolled by the D&D Yonder dice API'
+                      : `rolled locally${rollSourceReason ? ` (Yonder: ${rollSourceReason})` : ''}`}
+                  </span>
+                ) : (
+                  <span className="text-xs text-stone-500">kept from the existing character</span>
+                )}
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2">
@@ -778,14 +830,21 @@ export function Wizard({
             </div>
 
             <div className="space-y-2">
-              <h3 className="text-sm font-medium text-stone-300">Weapons</h3>
+              <h3 className="text-sm font-medium text-stone-300">
+                Weapons
+                <span className="ml-2 text-xs text-stone-500">
+                  {equipment.weaponIds?.length ?? 0} of {MAX_WEAPONS} carried
+                </span>
+              </h3>
               <div className="flex flex-wrap gap-1.5">
                 {WEAPONS.map((weapon) => {
                   const chosen = equipment.weaponIds?.includes(weapon.id) ?? false
+                  const full = (equipment.weaponIds?.length ?? 0) >= MAX_WEAPONS && !chosen
                   return (
                     <button
                       key={weapon.id}
                       type="button"
+                      disabled={full}
                       onClick={() =>
                         setEquipment((prev) => {
                           const current = prev.weaponIds ?? []
@@ -798,10 +857,12 @@ export function Wizard({
                         })
                       }
                       title={`${weapon.damage} ${weapon.damageType}`}
-                      className={`rounded-full border px-3 py-1 text-xs cursor-pointer ${
+                      className={`rounded-full border px-3 py-1 text-xs ${
                         chosen
-                          ? 'border-amber-500 bg-amber-600/20 text-stone-100'
-                          : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                          ? 'border-amber-500 bg-amber-600/20 text-stone-100 cursor-pointer'
+                          : full
+                            ? 'border-white/5 bg-white/[0.02] text-stone-600 cursor-not-allowed'
+                            : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10 cursor-pointer'
                       }`}
                     >
                       {weapon.name}
@@ -834,7 +895,9 @@ export function Wizard({
       {step === 'spells' && charClass && (
         <Panel
           title="Spells"
-          hint="Pulled from the D&D Yonder spell list. If it is unavailable you can type them in later — the slots and save DC on your sheet are already worked out."
+          hint={`Pulled from the D&D Yonder spell list. A ${charClass.name} at level ${level} ${
+            spellLimits?.prepared ? 'prepares' : 'knows'
+          } ${spellLimits?.spellsKnown ?? 0} spells and ${spellLimits?.cantripsKnown ?? 0} cantrips — pick up to that many. If the list is unavailable you can type them in later.`}
         >
           {spellOptions === null ? (
             <p className="text-sm text-stone-400">Looking up spells…</p>
@@ -850,31 +913,41 @@ export function Wizard({
                 if (!options.length) return null
                 const chosen = group === 'cantrips' ? cantrips : spells
                 const setChosen = group === 'cantrips' ? setCantrips : setSpells
+                const limit = (group === 'cantrips' ? spellLimits?.cantripsKnown : spellLimits?.spellsKnown) ?? 0
                 return (
                   <div key={group} className="space-y-2">
                     <h3 className="text-sm font-medium text-stone-300">
                       {group === 'cantrips' ? 'Cantrips' : 'Level 1 spells'}
-                      <span className="ml-2 text-xs text-stone-500">{chosen.length} chosen</span>
+                      <span className="ml-2 text-xs text-stone-500">
+                        {chosen.length} of {limit} chosen
+                      </span>
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
-                      {options.map((spell) => (
-                        <button
-                          key={spell}
-                          type="button"
-                          onClick={() =>
-                            setChosen((prev) =>
-                              prev.includes(spell) ? prev.filter((entry) => entry !== spell) : [...prev, spell],
-                            )
-                          }
-                          className={`rounded-full border px-3 py-1 text-xs cursor-pointer ${
-                            chosen.includes(spell)
-                              ? 'border-amber-500 bg-amber-600/20 text-stone-100'
-                              : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
-                          }`}
-                        >
-                          {spell}
-                        </button>
-                      ))}
+                      {options.map((spell) => {
+                        const picked = chosen.includes(spell)
+                        const full = chosen.length >= limit && !picked
+                        return (
+                          <button
+                            key={spell}
+                            type="button"
+                            disabled={full}
+                            onClick={() =>
+                              setChosen((prev) =>
+                                prev.includes(spell) ? prev.filter((entry) => entry !== spell) : [...prev, spell],
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1 text-xs ${
+                              picked
+                                ? 'border-amber-500 bg-amber-600/20 text-stone-100 cursor-pointer'
+                                : full
+                                  ? 'border-white/5 bg-white/[0.02] text-stone-600 cursor-not-allowed'
+                                  : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10 cursor-pointer'
+                            }`}
+                          >
+                            {spell}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -970,7 +1043,7 @@ export function Wizard({
         </Button>
         {step === 'name' ? (
           <Button variant="primary" onClick={save} disabled={!canContinue() || busy}>
-            {busy ? 'Saving…' : 'Save character'}
+            {busy ? 'Saving…' : editingId ? 'Save changes' : 'Save character'}
           </Button>
         ) : (
           <Button variant="primary" onClick={() => go(1)} disabled={!canContinue() || busy}>

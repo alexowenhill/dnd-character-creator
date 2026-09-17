@@ -96,6 +96,9 @@ export type StoredEquipment = {
   extras?: string[]
 }
 
+/** Nobody straps on an armoury. Covers every starter kit, which top out at three. */
+export const MAX_WEAPONS = 3
+
 /**
  * A sensible opening kit per class, so nobody has to shop before they can play.
  * Offered as a default, not imposed.

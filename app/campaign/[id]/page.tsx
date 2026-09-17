@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { Notes } from './Notes'
+import { DeleteCampaign } from './DeleteCampaign'
 import { signedIn } from '@/lib/guard'
 import { getCampaign, listCharacters } from '@/lib/store'
 import { computeSheet, formatModifier } from '@/lib/character'
@@ -19,13 +20,18 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 space-y-8">
       <header className="space-y-1">
-        <Link href="/" className="text-sm text-stone-400 hover:text-stone-300">
-          ← The party
-        </Link>
-        <h1 className="text-2xl font-semibold text-stone-100">{campaign.name}</h1>
-        <p className="text-sm text-stone-400">
-          {members.length} character{members.length === 1 ? '' : 's'}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <Link href="/" className="text-sm text-stone-400 hover:text-stone-300">
+              ← The party
+            </Link>
+            <h1 className="text-2xl font-semibold text-stone-100">{campaign.name}</h1>
+            <p className="text-sm text-stone-400">
+              {members.length} character{members.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <DeleteCampaign campaignId={campaign.id} campaignName={campaign.name} />
+        </div>
       </header>
 
       <section className="space-y-3">

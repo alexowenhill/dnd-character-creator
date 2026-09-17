@@ -35,11 +35,11 @@ export type Question = {
 export const QUESTIONS: Question[] = [
   {
     id: 'trouble',
-    prompt: 'A fight is starting and you have one moment to act. What do you do?',
+    prompt: 'A brawl breaks out on deck and you have one moment to act. What do you do?',
     answers: [
       {
         id: 'charge',
-        label: 'Get between it and everyone else',
+        label: 'Get between it and the rest of the crew',
         detail: 'You are the wall.',
         weights: {
           classes: { fighter: 3, paladin: 3, barbarian: 2 },
@@ -49,7 +49,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'shadows',
-        label: 'Step out of sight and pick your moment',
+        label: 'Slip into the rigging and pick your moment',
         detail: 'Nobody sees the important hit coming.',
         weights: {
           classes: { rogue: 3, ranger: 2, monk: 1 },
@@ -83,11 +83,11 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'origin',
-    prompt: 'Where did you come from?',
+    prompt: 'Before you signed onto this voyage, where were you?',
     answers: [
       {
         id: 'city',
-        label: 'A city, and not the nice part',
+        label: 'A port city, and not the nice part of the docks',
         weights: {
           backgrounds: { urchin: 3, criminal: 2, charlatan: 1 },
           classes: { rogue: 2 },
@@ -97,7 +97,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'wild',
-        label: 'Somewhere wild, far from roads',
+        label: 'Somewhere wild, far from any harbour',
         weights: {
           backgrounds: { outlander: 3, 'folk-hero': 1, hermit: 1 },
           classes: { ranger: 3, druid: 3, barbarian: 2 },
@@ -118,7 +118,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'privilege',
-        label: 'Money, or at least a name people recognise',
+        label: 'Money, or at least a name the harbourmaster recognised',
         weights: {
           backgrounds: { noble: 3, 'guild-artisan': 1, entertainer: 1 },
           classes: { bard: 2, paladin: 1, sorcerer: 1 },
@@ -130,11 +130,11 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'drive',
-    prompt: 'Why are you out here risking your neck?',
+    prompt: 'Why did you sign onto this voyage?',
     answers: [
       {
         id: 'duty',
-        label: 'Somebody has to, and it may as well be me',
+        label: 'Somebody has to keep this crew safe, and it may as well be me',
         weights: {
           classes: { paladin: 3, cleric: 2, fighter: 1 },
           alignments: { lg: 3, ln: 1 },
@@ -143,7 +143,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'curiosity',
-        label: 'I want to know what is out there',
+        label: 'I want to know what is past the horizon',
         weights: {
           classes: { wizard: 3, bard: 2, ranger: 1 },
           alignments: { ng: 1, n: 2 },
@@ -153,7 +153,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'freedom',
-        label: 'Nobody tells me where to be',
+        label: 'Nobody tells me which port to make for',
         weights: {
           classes: { barbarian: 2, rogue: 2, sorcerer: 1, warlock: 1 },
           alignments: { cn: 3, cg: 2 },
@@ -162,7 +162,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'debt',
-        label: 'I owe someone, or something, a great deal',
+        label: 'I owe someone, or something, a debt that followed me onto this ship',
         weights: {
           classes: { warlock: 3, monk: 1, rogue: 1 },
           alignments: { n: 1, le: 1, cn: 1 },
@@ -174,7 +174,7 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'party-role',
-    prompt: 'What does the rest of the party come to you for?',
+    prompt: 'What does the rest of the crew come to you for?',
     answers: [
       {
         id: 'damage',
@@ -195,7 +195,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'knowledge',
-        label: 'Knowing what that thing is',
+        label: 'Knowing what that thing surfacing off the bow is',
         weights: {
           classes: { wizard: 3, bard: 1, druid: 1 },
           backgrounds: { sage: 3 },
@@ -204,7 +204,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'problems',
-        label: 'Getting in, getting out, getting it open',
+        label: 'Getting below deck, getting it open, getting out before it floods',
         weights: {
           classes: { rogue: 3, monk: 1, ranger: 1 },
           backgrounds: { criminal: 2, urchin: 1 },
@@ -215,7 +215,7 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'temperament',
-    prompt: 'Someone insults you in a crowded room.',
+    prompt: 'Someone insults you in a crowded dockside tavern.',
     answers: [
       {
         id: 'fists',
@@ -261,7 +261,7 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'body',
-    prompt: 'How do you actually get things done?',
+    prompt: 'How do you actually get things done out here?',
     answers: [
       {
         id: 'strong',
@@ -303,7 +303,7 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'magic-feel',
-    prompt: 'How do you feel about magic?',
+    prompt: 'How do you feel about magic, out on the open water?',
     answers: [
       {
         id: 'study',
@@ -317,7 +317,7 @@ export const QUESTIONS: Question[] = [
       },
       {
         id: 'given',
-        label: 'Something gave it to me, and it wants something back',
+        label: 'Something from the deep gave it to me, and it wants something back',
         weights: { classes: { warlock: 4, cleric: 1 }, abilities: { cha: 1 } },
       },
       {
