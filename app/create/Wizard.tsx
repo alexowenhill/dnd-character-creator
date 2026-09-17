@@ -28,6 +28,7 @@ import {
 } from '@/lib/equipment'
 
 type Roll = { dice: number[]; total: number; guid?: string }
+type SpellInfo = { name: string; desc?: string }
 
 /**
  * A distinct tint per quiz question, purely so scrolling through seven of them
@@ -183,7 +184,8 @@ export function Wizard({
   const [equipment, setEquipment] = useState<StoredEquipment>(editing ? (initial?.equipment ?? {}) : {})
   const [cantrips, setCantrips] = useState<string[]>(editing ? (initial?.cantrips ?? []) : [])
   const [spells, setSpells] = useState<string[]>(editing ? (initial?.spells ?? []) : [])
-  const [spellOptions, setSpellOptions] = useState<{ cantrips: string[]; leveled: string[] } | null>(null)
+  const [spellOptions, setSpellOptions] = useState<{ cantrips: SpellInfo[]; leveled: SpellInfo[] } | null>(null)
+  const [viewingSpell, setViewingSpell] = useState<SpellInfo | null>(null)
 
   const [name, setName] = useState(editing ? (initial?.name ?? '') : '')
   const [playerName, setPlayerName] = useState(editing ? (initial?.playerName ?? '') : '')
@@ -290,11 +292,11 @@ export function Wizard({
     if (step !== 'spells' || !charClass || !isCaster) return
     let cancelled = false
     const load = async () => {
-      const fetchLevel = async (spellLevel: number) => {
+      const fetchLevel = async (spellLevel: number): Promise<SpellInfo[]> => {
         const res = await fetch(`/api/spells?classId=${charClass.id}&level=${spellLevel}`)
         if (!res.ok) return []
-        const data = (await res.json()) as { spells: { name: string }[] }
-        return data.spells.map((spell) => spell.name)
+        const data = (await res.json()) as { spells: { name: string; desc?: string }[] }
+        return data.spells.map((spell) => ({ name: spell.name, desc: spell.desc }))
       }
       const [zero, one] = await Promise.all([fetchLevel(0), fetchLevel(1)])
       if (!cancelled) setSpellOptions({ cantrips: zero, leveled: one })
@@ -924,27 +926,31 @@ export function Wizard({
                     </h3>
                     <div className="flex flex-wrap gap-1.5">
                       {options.map((spell) => {
-                        const picked = chosen.includes(spell)
+                        const picked = chosen.includes(spell.name)
                         const full = chosen.length >= limit && !picked
+                        const viewed = viewingSpell?.name === spell.name
                         return (
                           <button
-                            key={spell}
+                            key={spell.name}
                             type="button"
                             disabled={full}
-                            onClick={() =>
+                            onClick={() => {
+                              setViewingSpell(spell)
                               setChosen((prev) =>
-                                prev.includes(spell) ? prev.filter((entry) => entry !== spell) : [...prev, spell],
+                                prev.includes(spell.name)
+                                  ? prev.filter((entry) => entry !== spell.name)
+                                  : [...prev, spell.name],
                               )
-                            }
+                            }}
                             className={`rounded-full border px-3 py-1 text-xs ${
                               picked
-                                ? 'border-amber-500 bg-amber-600/20 text-stone-100 cursor-pointer'
+                                ? `border-amber-500 bg-amber-600/20 text-stone-100 cursor-pointer${viewed ? ' ring-1 ring-sky-400' : ''}`
                                 : full
                                   ? 'border-white/5 bg-white/[0.02] text-stone-600 cursor-not-allowed'
-                                  : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10 cursor-pointer'
+                                  : `border-white/10 bg-white/5 text-stone-300 hover:bg-white/10 cursor-pointer${viewed ? ' ring-1 ring-sky-400' : ''}`
                             }`}
                           >
-                            {spell}
+                            {spell.name}
                           </button>
                         )
                       })}
@@ -952,6 +958,15 @@ export function Wizard({
                   </div>
                 )
               })}
+
+              {viewingSpell && (
+                <div className="rounded-xl border border-sky-500/25 bg-sky-500/[0.06] p-4">
+                  <h3 className="text-sm font-medium text-stone-100">{viewingSpell.name}</h3>
+                  <p className="mt-1.5 text-xs leading-relaxed text-stone-300">
+                    {viewingSpell.desc || 'No description came back from the spell list for this one.'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </Panel>

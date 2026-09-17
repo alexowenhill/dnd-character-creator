@@ -1,8 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { formatModifier, type ComputedSheet } from '@/lib/character'
-import { ALIGNMENTS } from '@/lib/srd'
+import { ALIGNMENTS, type AbilityKey } from '@/lib/srd'
 import { armourById, weaponById } from '@/lib/equipment'
+
+type Check = { die: number; total: number; source: 'yonder' | 'local'; busy?: boolean }
 
 function Box({ label, value, note }: { label: string; value: string | number; note?: string }) {
   return (
@@ -27,6 +30,24 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
   const c = sheet.character
   const alignment = ALIGNMENTS.find((entry) => entry.id === c.alignmentId)
 
+  const [checks, setChecks] = useState<Partial<Record<AbilityKey, Check>>>({})
+
+  /** Roll a d20 and add the ability's modifier — a quick check, not saved anywhere. */
+  const rollCheck = async (key: AbilityKey, modifier: number) => {
+    setChecks((prev) => ({ ...prev, [key]: { ...prev[key], die: prev[key]?.die ?? 0, total: prev[key]?.total ?? 0, source: prev[key]?.source ?? 'local', busy: true } }))
+    try {
+      const res = await fetch('/api/check', { method: 'POST' })
+      const data = (await res.json()) as { value: number; source: 'yonder' | 'local' }
+      setChecks((prev) => ({ ...prev, [key]: { die: data.value, total: data.value + modifier, source: data.source } }))
+    } catch {
+      setChecks((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    }
+  }
+
   return (
     <div className="space-y-8">
       <header className="space-y-1">
@@ -44,26 +65,34 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
 
       {/* Ability scores */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-        {sheet.abilities.map((ability) => (
-          <div
-            key={ability.key}
-            className="rounded-xl border border-white/10 bg-white/5 px-2 py-3 text-center"
-            title={`${ability.base} rolled${ability.racial ? ` + ${ability.racial} racial` : ''}${
-              ability.improvement ? ` + ${ability.improvement} improvement` : ''
-            }`}
-          >
-            <div className="text-[10px] uppercase tracking-wider text-stone-500">{ability.short}</div>
-            <div className="text-2xl font-semibold text-stone-100">{ability.total}</div>
-            <div className="text-xs text-amber-500/90">{formatModifier(ability.modifier)}</div>
-            {(ability.racial > 0 || ability.improvement > 0) && (
-              <div className="mt-0.5 text-[10px] text-stone-600">
-                {ability.base}
-                {ability.racial ? ` +${ability.racial}` : ''}
-                {ability.improvement ? ` +${ability.improvement}` : ''}
+        {sheet.abilities.map((ability) => {
+          const check = checks[ability.key]
+          return (
+            <button
+              key={ability.key}
+              type="button"
+              onClick={() => rollCheck(ability.key, ability.modifier)}
+              title={`${ability.base} rolled${ability.racial ? ` + ${ability.racial} racial` : ''}${
+                ability.improvement ? ` + ${ability.improvement} improvement` : ''
+              } — click to roll a ${ability.name} check`}
+              className="cursor-pointer rounded-xl border border-white/10 bg-white/5 px-2 py-3 text-center transition-colors hover:bg-white/10 hover:border-amber-500/40"
+            >
+              <div className="text-[10px] uppercase tracking-wider text-stone-500">{ability.short}</div>
+              <div className="text-2xl font-semibold text-stone-100">{ability.total}</div>
+              <div className="text-xs text-amber-500/90">{formatModifier(ability.modifier)}</div>
+              {(ability.racial > 0 || ability.improvement > 0) && (
+                <div className="mt-0.5 text-[10px] text-stone-600">
+                  {ability.base}
+                  {ability.racial ? ` +${ability.racial}` : ''}
+                  {ability.improvement ? ` +${ability.improvement}` : ''}
+                </div>
+              )}
+              <div className="mt-1.5 min-h-[1rem] text-[11px] font-medium text-sky-300">
+                {check ? (check.busy ? 'rolling…' : `🎲${check.die} ${formatModifier(ability.modifier)} = ${check.total}`) : ' '}
               </div>
-            )}
-          </div>
-        ))}
+            </button>
+          )
+        })}
       </div>
 
       {/* Headline combat numbers */}
