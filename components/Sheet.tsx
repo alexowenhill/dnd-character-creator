@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { formatModifier, type ComputedSheet } from '@/lib/character'
 import { ALIGNMENTS, type AbilityKey } from '@/lib/srd'
 import { armourById, weaponById } from '@/lib/equipment'
+import { characterIntro } from '@/lib/flavor'
 
 type Check = { die: number; total: number; source: 'yonder' | 'local'; busy?: boolean }
 
@@ -31,6 +32,7 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
   const alignment = ALIGNMENTS.find((entry) => entry.id === c.alignmentId)
 
   const [checks, setChecks] = useState<Partial<Record<AbilityKey, Check>>>({})
+  const [viewingSpell, setViewingSpell] = useState<string | null>(null)
 
   /** Roll a d20 and add the ability's modifier — a quick check, not saved anywhere. */
   const rollCheck = async (key: AbilityKey, modifier: number) => {
@@ -62,6 +64,8 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
           {c.playerName ? ` · played by ${c.playerName}` : ''}
         </p>
       </header>
+
+      <p className="text-sm italic leading-relaxed text-stone-300">{characterIntro(c)}</p>
 
       {/* Ability scores */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -219,28 +223,55 @@ export function Sheet({ sheet }: { sheet: ComputedSheet }) {
               <div className="space-y-2">
                 {c.cantrips?.length ? (
                   <div>
-                    <div className="text-xs text-stone-500">Cantrips</div>
+                    <div className="text-xs text-stone-500">Cantrips — press one to read it</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {c.cantrips.map((spell) => (
-                        <span key={spell} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-300">
+                        <button
+                          key={spell}
+                          type="button"
+                          onClick={() => setViewingSpell((current) => (current === spell ? null : spell))}
+                          className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                            viewingSpell === spell
+                              ? 'border-sky-400 bg-sky-500/10 text-stone-100'
+                              : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                          }`}
+                        >
                           {spell}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </div>
                 ) : null}
                 {c.spells?.length ? (
                   <div>
-                    <div className="text-xs text-stone-500">Spells</div>
+                    <div className="text-xs text-stone-500">Spells — press one to read it</div>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {c.spells.map((spell) => (
-                        <span key={spell} className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-stone-300">
+                        <button
+                          key={spell}
+                          type="button"
+                          onClick={() => setViewingSpell((current) => (current === spell ? null : spell))}
+                          className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
+                            viewingSpell === spell
+                              ? 'border-sky-400 bg-sky-500/10 text-stone-100'
+                              : 'border-white/10 bg-white/5 text-stone-300 hover:bg-white/10'
+                          }`}
+                        >
                           {spell}
-                        </span>
+                        </button>
                       ))}
                     </div>
                   </div>
                 ) : null}
+                {viewingSpell && (
+                  <div className="rounded-lg border border-sky-500/25 bg-sky-500/[0.06] p-3">
+                    <h4 className="text-sm font-medium text-stone-100">{viewingSpell}</h4>
+                    <p className="mt-1 text-xs leading-relaxed text-stone-300">
+                      {c.spellDescriptions?.[viewingSpell] ||
+                        'No description was saved for this spell — it was likely typed in by hand.'}
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-xs text-stone-500">

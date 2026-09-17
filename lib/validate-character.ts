@@ -122,6 +122,19 @@ export function validateCharacterInput(body: unknown, identity?: Identity): Vali
   const spells = strings(input.spells)
   const cantrips = strings(input.cantrips)
 
+  // Only keep descriptions for spells actually picked, and only plain strings
+  // — this rides along with the character but never drives any rule.
+  const known = new Set([...spells, ...cantrips])
+  const rawDescriptions = input.spellDescriptions
+  const spellDescriptions: Record<string, string> = {}
+  if (rawDescriptions && typeof rawDescriptions === 'object') {
+    for (const [spellName, desc] of Object.entries(rawDescriptions as Record<string, unknown>)) {
+      if (known.has(spellName) && typeof desc === 'string' && desc.trim()) {
+        spellDescriptions[spellName] = desc.trim().slice(0, 2000)
+      }
+    }
+  }
+
   const character: StoredCharacter = {
     id: identity?.id ?? randomUUID(),
     name,
@@ -141,6 +154,7 @@ export function validateCharacterInput(body: unknown, identity?: Identity): Vali
     equipment,
     spells,
     cantrips,
+    spellDescriptions: Object.keys(spellDescriptions).length ? spellDescriptions : undefined,
     notes: typeof input.notes === 'string' ? input.notes.slice(0, 2000) : undefined,
     createdAt: identity?.createdAt ?? new Date().toISOString(),
   }

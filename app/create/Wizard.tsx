@@ -186,6 +186,11 @@ export function Wizard({
   const [spells, setSpells] = useState<string[]>(editing ? (initial?.spells ?? []) : [])
   const [spellOptions, setSpellOptions] = useState<{ cantrips: SpellInfo[]; leveled: SpellInfo[] } | null>(null)
   const [viewingSpell, setViewingSpell] = useState<SpellInfo | null>(null)
+  /** name -> description, for every spell seen this session, so it can be
+   *  saved onto the character and read again on its sheet later. */
+  const [spellDescMap, setSpellDescMap] = useState<Record<string, string>>(
+    editing ? (initial?.spellDescriptions ?? {}) : {},
+  )
 
   const [name, setName] = useState(editing ? (initial?.name ?? '') : '')
   const [playerName, setPlayerName] = useState(editing ? (initial?.playerName ?? '') : '')
@@ -299,7 +304,13 @@ export function Wizard({
         return data.spells.map((spell) => ({ name: spell.name, desc: spell.desc }))
       }
       const [zero, one] = await Promise.all([fetchLevel(0), fetchLevel(1)])
-      if (!cancelled) setSpellOptions({ cantrips: zero, leveled: one })
+      if (cancelled) return
+      setSpellOptions({ cantrips: zero, leveled: one })
+      setSpellDescMap((prev) => {
+        const next = { ...prev }
+        for (const spell of [...zero, ...one]) if (spell.desc) next[spell.name] = spell.desc
+        return next
+      })
     }
     load().catch(() => {
       if (!cancelled) setSpellOptions({ cantrips: [], leveled: [] })
@@ -359,10 +370,15 @@ export function Wizard({
       equipment,
       cantrips,
       spells,
+      spellDescriptions: Object.fromEntries(
+        [...cantrips, ...spells]
+          .filter((spellName) => spellDescMap[spellName])
+          .map((spellName) => [spellName, spellDescMap[spellName]]),
+      ),
       createdAt: new Date().toISOString(),
     }),
     [name, playerName, campaignId, level, raceId, subraceId, classId, subclassId, backgroundId, alignmentId,
-      baseAbilities, assignment, rolls, improvements, skillChoices, equipment, cantrips, spells],
+      baseAbilities, assignment, rolls, improvements, skillChoices, equipment, cantrips, spells, spellDescMap],
   )
 
   /** How many cantrips and spells this class actually knows at this level — the

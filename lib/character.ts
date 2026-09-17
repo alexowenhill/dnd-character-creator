@@ -54,6 +54,10 @@ export type StoredCharacter = {
   equipment?: StoredEquipment
   spells?: string[]
   cantrips?: string[]
+  /** What each spell/cantrip in `spells`/`cantrips` does, from the Yonder spell
+   *  list at the time it was picked — stored so it is still there to read at
+   *  the table even if the API is down or the account is gone by then. */
+  spellDescriptions?: Record<string, string>
   notes?: string
   createdAt: string
 }
