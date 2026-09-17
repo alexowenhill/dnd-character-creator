@@ -3,6 +3,9 @@
   publish = ".next"
 
 # Netlify's Next.js runtime handles the App Router, including the server-side
-# route handlers this app uses to talk to the D&D Yonder API.
+# route handlers, and provides the Blobs store that characters are saved to.
+#
+# PARTY_PASSWORD must be set under Site configuration -> Environment variables,
+# or nobody can get in. See .env.example for the rest.
 [[plugins]]
   package = "@netlify/plugin-nextjs"

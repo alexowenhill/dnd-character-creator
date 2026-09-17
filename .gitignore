@@ -9,5 +9,6 @@ build/
 next-env.d.ts
 .netlify/
 
-# probe transcript
-probe-output.json
+
+# local character storage
+.data/

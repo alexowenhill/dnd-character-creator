@@ -1,260 +1,105 @@
 # Character creator
 
-A friendly web UI for rolling up D&D 5e characters, so a group of friends can
-make characters without wrestling with a character sheet.
+A guided D&D 5e character builder for one group of friends. Everyone shares a
+single password, answers a few questions about how they like to play, rolls
+their stats, and comes away with a finished level 5 sheet. The party page shows
+everyone's characters in one place.
 
-It is a thin front end over the [D&D Yonder API](https://dndapi.ashleysheridan.co.uk/),
-a free public API by Ashley Sheridan that does the actual character creation and
-stores the characters.
+No rules knowledge needed, and nothing to install.
 
-## What it does
+## How it works for a player
 
-One page, walked through in steps:
+1. Open the site, type the party password. No username, no account.
+2. Answer seven questions — how you handle trouble, where you came from, why
+   you are out here. They are about temperament, not rules.
+3. The suggestions come back ranked, with the reasons. Take them or ignore them:
+   every race, class, background and alignment is still there to pick from.
+4. Roll your abilities — six sets of 4d6 keeping the best three. The app
+   arranges them sensibly for the class you chose; drag them around if you'd
+   rather.
+5. Pick your skills, and your spells if you cast.
+6. Name them, and you are done. The sheet has everything you need to play.
 
-1. **Name** — type one, or get suggestions from the API's name generator (pick a
-   style: elf, dwarf, tiefling, and so on).
-2. **Race**
-3. **Class**, plus a class path if the class has one.
-4. **Background**, plus its characteristics.
-5. **Abilities** — rolls 4d6 six times, then you decide which roll goes to which
-   ability.
-6. **Languages**
-7. **Spells** — only the ones this character can actually cast.
+## What the sheet works out
 
-Then it shows the finished character sheet: race, class and path, background,
-the six ability scores with their modifiers, languages, spells and
-characteristics. The raw API response is one click away underneath.
+- Ability scores, with racial bonuses and the level 4 improvement, capped at 20
+- Hit points, hit dice, armour class, initiative, speed
+- Proficiency bonus, all six saving throws, all eighteen skills
+- Passive perception
+- For casters: spell save DC, spell attack bonus, spell slots per level, how
+  many cantrips and spells to prepare or know
+- Class features and racial traits at your level
+- The actual dice that produced each ability score
 
-You can step back at any point; each step is saved independently, so going back
-and re-saving just overwrites that part.
+Everything is recomputed from the stored choices each time it is shown, so a
+rules correction applies to characters that already exist.
 
 ## Running it locally
 
 ```bash
 npm install
+cp .env.example .env.local   # set PARTY_PASSWORD at minimum
 npm run dev
 ```
 
 Then open http://localhost:3000.
 
-Everyone needs an account on D&D Yonder, since that is where characters are
-stored. The app has a register option built into the first screen; any email
-address works, it is only used to log in.
+Locally, characters are stored in `.data/characters.json`. On Netlify they go
+into Netlify Blobs, which needs no configuration.
 
 ## Deploying to Netlify
 
-Connect the repo to Netlify and it should pick everything up from
-`netlify.toml` — build command `npm run build`, publish directory `.next`, and
-Netlify's Next.js runtime for the server-side parts.
+Connect the repository and set the environment variables from `.env.example`.
+`netlify.toml` covers the rest — build command, publish directory, and the
+Next.js runtime for the server-side parts.
 
-No environment variables are required. If you ever need to point at a different
-backend, set `DND_API_BASE`; it defaults to `https://dndapi.ashleysheridan.co.uk`.
+`PARTY_PASSWORD` is the only one that is required.
 
-## How it talks to the API
-
-Every D&D Yonder endpoint needs a bearer token. The token is kept in an
-httpOnly cookie and attached server-side, so it never reaches the browser:
-
-- `app/api/dnd/auth` — logs in or registers, and sets the cookie.
-- `app/api/dnd/[...path]` — a catch-all proxy. `/api/dnd/characters/races`
-  becomes `{DND_API_BASE}/api/characters/races` with the token attached.
-
-That also means endpoints this UI does not cover yet — encounters, creatures,
-the undocumented campaign map routes — already work through the same path if you
-want to build on them.
-
-The proxy takes the upstream path from the request URL rather than from Next's
-parsed route params, because a trailing slash matters upstream: the documented
-create route is `POST /api/characters/`, and Next would otherwise 308 the slash
-away before the proxy saw it. Hence `skipTrailingSlashRedirect` in
-`next.config.ts`.
-
-## Response shapes
-
-The upstream API documents its request bodies but not its responses, so
-`lib/shape.ts` (option lists, dice rolls) and `lib/sheet.ts` (the finished
-character) probe for the common envelope and field names rather than assuming
-one. Anything they cannot find is left out of the sheet instead of crashing, and
-the raw JSON stays visible underneath.
-
-### "Why don't my characters save?"
-
-The console has a one-click diagnosis for this. It checks the token with
-`GET /api/user`, counts your characters, tries creating one four ways — with and
-without a trailing slash, as JSON and as form data — then counts again, and says
-which combination worked or that none did.
-
-This is what found the redirect described below. The other thing it catches is a
-**create that is accepted but never persisted** — if every combination returns
-2xx and the character count does not move, the problem is server-side and no
-change here can fix it; the transcript is a complete reproduction to send to the
-API author.
-
-### The trailing slash on the create route (confirmed)
-
-The live API answers `POST /api/characters/` with a **301 to
-`/api/characters`**, even though the docs write the route with the slash.
-
-That matters more than it looks. Per the fetch spec a 301 or 302 answering a
-POST is retried **as a GET with the body dropped**, so the create silently
-became a read of the characters list: it returned `[]`, reported no error, and
-saved nothing. Because `fetch` follows redirects by default, none of this was
-visible — the symptom was just "create returns an empty array, and so does the
-list".
-
-`yonderFetch` handles it in two parts:
-
-- GET and HEAD follow redirects normally — there is no body to lose.
-- Anything carrying a body uses `redirect: 'manual'` and, on a 3xx, re-issues
-  the request to the `Location` with its method and body intact, which is what a
-  307/308 would have preserved. One hop only, so a loop cannot spin.
-
-That re-send is restricted to the same origin. A redirect pointing at another
-host is refused and reported, because following it would hand that host the
-bearer token.
-
-Both spellings of the create route therefore work. The UI uses the bare path.
-
-### How the create body is encoded
-
-With the redirect out of the way the create route answered a JSON body with
-`{"error":"Bad Request"}` — a custom 400, not Laravel's usual 422 validation
-shape, which suggests the body is not being read the way it was sent. Login and
-register both take form data, so the create may too.
-
-Rather than guess, creating a character tries each encoding in turn — form data
-first, since that is what the live evidence points at, then JSON — against the
-bare path and then the trailing-slash one. The first that succeeds wins, and if
-all four are refused the error lists what was sent and what came back.
-
-This is verified in both directions: against a mock that accepts only form data,
-and one that accepts only JSON. Whichever the API turns out to want, the app
-finds it.
-
-### The API console
-
-`/console` (linked at the foot of the main page) sends arbitrary requests
-through the same authenticated proxy the app uses and shows the raw response —
-status, timing and body — so you can see what an endpoint really returns without
-touching the wizard.
-
-- Presets for every documented endpoint, plus guesses for the undocumented ones
-  (which path serves languages, where the current user lives).
-- `{guid}` in a path is substituted from the captured-guid box, which fills in
-  automatically from any response containing a guid, so create-then-PATCH is two
-  clicks.
-- "Copy all as text" puts the whole session on the clipboard, which is the
-  quickest way to hand over what happened.
-
-Sign in on the main page first — the console borrows the same token.
-
-### Checking them against the live API
-
-**The response readers have not been run against the real service.** This was
-built in an environment whose egress policy blocks
-`dndapi.ashleysheridan.co.uk`, so the shapes above are informed guesses.
-
-From a machine that can reach the API, this walks a character all the way
-through and reports what actually comes back:
+## Tests
 
 ```bash
-npm run probe
+npm test
 ```
 
-It registers a throwaway account, creates a character, applies race, class and
-background, rolls and assigns all six abilities, then fetches the finished
-sheet — checking each of the app's readers against the real response and naming
-the file to fix when one is wrong. Reuse an existing account with
-`DND_EMAIL=… DND_PASSWORD=… npm run probe`. The full transcript lands in
-`probe-output.json`.
+Covers the rules maths against worked examples — hit points for several
+class and constitution combinations, unarmoured AC for monks and barbarians,
+saving throws, skill proficiencies from both background and class, spell slots
+for full, half and pact casters, ability caps — plus the quiz scoring and the
+session cookie signing, including that a tampered cookie is rejected.
 
-It also resolves what the docs leave open: whether login wants form or JSON
-encoding, and the exact shape of each option list.
+## About the D&D Yonder API
 
-### Confirmed against the published docs
+This started as a front end for the
+[D&D Yonder API](https://dndapi.ashleysheridan.co.uk/). Its character storage
+turned out to be broken: `POST /api/characters` rejects every request with
+`{"error":"Bad Request"}`, including an empty body, so nothing can be saved
+there. `docs/api-bug-report.md` has the full investigation, ready to send.
 
-These started as guesses and the documentation has since settled them:
+So the rules live in `lib/srd.ts` and characters are stored by this app. The API
+is still used where it is good and where a failure costs nothing:
 
-- Ability ids really are alphabetical — 1 charisma, 2 constitution, 3 dexterity,
-  4 intelligence, 5 strength, 6 wisdom. `ABILITIES` matches.
-- Languages live at `GET /api/game/languages`.
-- `GET /api/names` and `/api/names/{type}` return `{ style, names: [...] }`.
-- Dice return `{ rolls: { d6: [...] }, guid }`.
-- Register returns `{ user, token }`; login returns `{ token }`.
-- `classPathId` is an array; the `abilityRolls` example in the docs is invalid
-  JSON (braces around a list) and an array is correct.
+- **Dice.** Ability rolls go through `POST /api/game/dice`, which stores each
+  roll server-side against a guid — harder to quietly re-roll than something
+  done in the browser. Falls back to the platform CSPRNG.
+- **Names.** The Markov-chain name generator, per race.
+- **Spells.** The spell index, filtered by class and level.
 
-### Not wired into the UI yet
+All three degrade to something sensible if the API is slow, down, or
+unconfigured. Leave `YONDER_EMAIL` and `YONDER_PASSWORD` unset and the app works
+fine without it.
 
-The API also covers items (`/api/game/items/{type}` and `/random`), a full spell
-index (`/api/game/spells` by level, school and class), creatures
-(`/api/creatures/{type}`) and encounter generation (`POST /api/encounters`).
-None of that is part of character creation, so the wizard does not use it — but
-every one of those endpoints works through the proxy and is a preset in the
-console.
-
-### What has been verified
-
-- `npm test` covers the response readers against a range of plausible payload
-  shapes — enveloped and bare, abilities keyed by id, by name and by short code,
-  and unrecognised junk — including the alphabetical ability ids, where a silent
-  mix-up would hand someone the wrong stats.
-- The whole flow has been walked end to end in a browser against a local mock of
-  the API: register, create, race, class and path, background and
-  characteristics, six dice rolls and assignment, languages, spells, and the
-  rendered sheet — plus that the token is never readable from JavaScript.
-
-Both of those prove the app's own wiring. Neither proves the guessed field
-names, which is what `npm run probe` is for.
-
-### If signing in fails
-
-The sign-in screen shows what the API actually replied, under "What the API
-actually sent back" — start there rather than guessing.
-
-`extractToken` in `lib/shape.ts` searches for the token under the names Laravel
-apps commonly use (`token`, `access_token`, Sanctum's `plainTextToken`,
-Passport's `access_token`), at the top level or inside a `data`/`user`
-envelope, so a merely unexpected nesting is handled. If the detail panel shows a
-token under some other name again, add it to `TOKEN_KEYS`.
-
-"Signed in, but no token came back" means the call returned 2xx with no token
-anywhere in it. Most often that is the API reporting a problem in a 200 — wrong
-password, or an account that does not exist yet — and the message after the
-colon is the API's own words.
-
-### Where a character's guid comes from
-
-`POST /api/characters/` documents no response body, and the docs describe a
-character's guid as "returned by the characters list endpoint". So creating a
-character is two calls: the app notes the character list before creating, posts
-the new character, and if no guid came back it re-reads
-`GET /api/characters` and takes the entry that was not there before (falling
-back to a name match).
-
-If the guid *is* in the create response it is used directly. `extractGuid`
-searches `guid`/`uuid` and their camel and snake spellings first, then
-`id`/`characterId`, at any depth, accepting a number as well as a string.
-
-### If a step comes up empty
-
-That means the response used field names the readers do not know.
-
-- Option lists (races, classes, backgrounds, languages, spells) — add the key to
-  the lists at the top of `lib/shape.ts`.
-- The finished sheet — add it to the corresponding list in `lib/sheet.ts`.
-- Class paths and background characteristics are assumed to arrive nested inside
-  the class/background objects. If they turn out to be separate endpoints, those
-  sub-steps will not appear and need their own fetch.
+One D&D Yonder account serves the whole site. Players never see it and never
+sign in to it — the credentials stay in environment variables and the token
+stays on the server.
 
 ## Notes on the rules
 
-- The API follows the 2014 5e ruleset.
-- Ability scores are **rolled** — there is no point buy or standard array.
-- Ability ids are alphabetical upstream (1 is charisma, 5 is strength), which is
-  not sheet order. `ABILITIES` in `lib/shape.ts` holds the mapping.
-- The score shown next to each roll is the usual best three of four. The server
-  keeps the raw roll and applies its own rule, so the saved score is whatever it
-  decides — the sheet at the end shows the authoritative values.
-- Character creation does not assign equipment, and derived numbers like HP and
-  AC are not part of the flow.
+- 2014 ruleset. Races, classes, backgrounds and subclasses are the SRD set.
+- Hit points use the fixed average per level rather than rolling, which is what
+  most tables do and avoids a level 5 character with 14 hit points.
+- Armour class assumes a sensible kit for the class, named on the sheet. Change
+  your armour and the number changes — the sheet shows the formula.
+- Each class has its SRD subclass. If your DM allows others, pick the closest
+  and note the real one.
+- Ability scores are rolled, 4d6 drop lowest. There is no point buy.
+- Equipment, feats and multiclassing are not covered.

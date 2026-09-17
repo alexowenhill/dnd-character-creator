@@ -8,10 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node scripts/test-readers.mjs",
+    "test": "node scripts/test-rules.mjs",
     "probe": "node scripts/probe.mjs"
   },
   "dependencies": {
+    "@netlify/blobs": "^11.1.0",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
