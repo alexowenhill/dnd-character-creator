@@ -28,6 +28,14 @@ export default async function HomePage() {
       ) : (
         <PartyList />
       )}
+
+      {unlocked && (
+        <footer className="pt-4">
+          <Link href="/console" className="text-xs text-stone-600 hover:text-stone-400">
+            API console — send raw requests and see what the API returns
+          </Link>
+        </footer>
+      )}
     </main>
   )
 }

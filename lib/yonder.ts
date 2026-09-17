@@ -1,8 +1,10 @@
 /**
  * Client for the D&D Yonder API (dndapi.ashleysheridan.co.uk).
  *
- * Everything runs server-side so the JWT never reaches the browser: it lives in
- * an httpOnly cookie and is attached by the proxy in app/api/dnd/[...path].
+ * Everything runs server-side: the shared account's token (lib/yonder-account.ts)
+ * never reaches the browser. Feature routes (names, spells, items, roll) each
+ * shape one endpoint's response; app/api/console/[...path] is a thin, unshaped
+ * proxy for manually exercising the rest of the API from /console.
  *
  * Response-shape helpers live in ./shape so client components can use them
  * without pulling this module into the browser bundle.
@@ -10,8 +12,6 @@
 
 export const YONDER_BASE =
   process.env.DND_API_BASE ?? 'https://dndapi.ashleysheridan.co.uk'
-
-export const DND_TOKEN_COOKIE = 'dnd_token'
 
 export type YonderResult = {
   ok: boolean
